@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>CONTEXTOR - Context Engineering Assistant</title>
+        <link rel="stylesheet" href="styles.css" />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap"
+            rel="stylesheet"
+        />
+    </head>
+    <body>
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <h1 class="header-title">CONTEXTOR</h1>
+                <p class="header-subtitle">Context Engineering Assistant</p>
+            </div>
+            <button class="btn-icon" id="settingsBtn" aria-label="Settings">
+                ⚙️
+            </button>
+        </header>
+
+        <!-- Main Container -->
+        <main class="container">
+            <!-- Mode Selector -->
+            <nav class="mode-selector">
+                <button class="mode-btn active" data-mode="text">
+                    <span class="emoji">✍️</span>
+                    <span class="label">Text</span>
+                </button>
+                <button class="mode-btn" data-mode="image">
+                    <span class="emoji">🎨</span>
+                    <span class="label">Image</span>
+                </button>
+                <button class="mode-btn" data-mode="video">
+                    <span class="emoji">🎬</span>
+                    <span class="label">Video</span>
+                </button>
+                <button class="mode-btn" data-mode="music">
+                    <span class="emoji">🎵</span>
+                    <span class="label">Music</span>
+                </button>
+            </nav>
+
+            <!-- Input Panel -->
+            <div class="input-panel">
+                <textarea
+                    class="input-field"
+                    id="inputField"
+                    placeholder="Enter your text context request..."
+                    rows="8"
+                ></textarea>
+
+                <!-- Sub-mode Selector (only for text mode) -->
+                <div class="sub-mode-selector" id="subModeSelector">
+                    <label>
+                        <input
+                            type="radio"
+                            name="submode"
+                            value="default"
+                            checked
+                        />
+                        <span>Default</span>
+                    </label>
+                    <label>
+                        <input type="radio" name="submode" value="modeA" />
+                        <span>Mode A (Clarify → Distill)</span>
+                    </label>
+                    <label>
+                        <input type="radio" name="submode" value="modeB" />
+                        <span>Mode B (Reasoning)</span>
+                    </label>
+                </div>
+
+                <!-- CoT/PoT Selector (only visible for Mode B) -->
+                <div class="reasoning-selector hidden" id="reasoningSelector">
+                    <label>
+                        <input
+                            type="radio"
+                            name="reasoning"
+                            value="cot"
+                            checked
+                        />
+                        <span>Chain-of-Thought (CoT)</span>
+                    </label>
+                    <label>
+                        <input type="radio" name="reasoning" value="pot" />
+                        <span>Program-of-Thought (PoT)</span>
+                    </label>
+                </div>
+
+                <button class="btn-primary" id="generateBtn">
+                    <span class="emoji">✨</span>
+                    <span id="generateBtnText">Generate</span>
+                </button>
+            </div>
+
+            <!-- Questions Panel (Mode A Stage 1) -->
+            <div class="questions-panel hidden" id="questionsPanel">
+                <h3 class="questions-title">Clarifying Questions</h3>
+                <form id="questionsForm">
+                    <div id="questionsList"></div>
+                    <button type="submit" class="btn-primary">
+                        <span class="emoji">✨</span>
+                        <span>Generate Context</span>
+                    </button>
+                </form>
+            </div>
+
+            <!-- Loading State -->
+            <div class="loading-state hidden" id="loadingState">
+                <span class="emoji">⏳</span>
+                <p class="loading-text" id="loadingText">
+                    Generating context...
+                </p>
+                <div class="loading-bar">
+                    <div class="loading-progress"></div>
+                </div>
+            </div>
+
+            <!-- Output Panel -->
+            <div class="output-panel hidden" id="outputPanel">
+                <div class="output-header">
+                    <h2 class="output-title">Generated Context</h2>
+                    <div class="output-controls">
+                        <label>
+                            <input
+                                type="radio"
+                                name="format"
+                                value="text"
+                                checked
+                            />
+                            <span>Text</span>
+                        </label>
+                        <label class="json-toggle">
+                            <input type="radio" name="format" value="json" />
+                            <span>JSON</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="output-field">
+                    <pre id="outputText"></pre>
+                </div>
+
+                <div class="output-footer">
+                    <button class="btn-secondary" id="copyBtn">
+                        <span class="emoji">📋</span>
+                        <span>Copy to Clipboard</span>
+                    </button>
+                    <span class="copy-feedback" id="copyFeedback"></span>
+                    <div class="output-metadata" id="outputMetadata"></div>
+                </div>
+            </div>
+
+            <!-- Error Message -->
+            <div class="error-message hidden" id="errorMessage">
+                <span class="emoji">⚠️</span>
+                <p class="error-text" id="errorText"></p>
+            </div>
+        </main>
+
+        <!-- Settings Modal -->
+        <div class="modal hidden" id="settingsModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Settings</h2>
+                    <button class="btn-close" id="closeModal">✕</button>
+                </div>
+                <div class="modal-body">
+                    <p class="settings-info">
+                        <strong>CONTEXTOR</strong> uses free AI providers
+                        (OpenRouter + Gemini) with automatic fallback.<br /><br />
+                        No API keys required. All processing is stateless and
+                        private.
+                    </p>
+                    <div class="settings-section">
+                        <h3>About</h3>
+                        <p>Version: 1.2.0</p>
+                        <p>
+                            A context engineering assistant for AI prompt
+                            optimization.
+                        </p>
+                        <p>
+                            <strong>New in v1.2.0:</strong><br />
+                            🛡️ Auto-retry with exponential backoff<br />
+                            ⏱️ Smart timeout handling (30-45s)<br />
+                            🏥 Real-time health monitoring<br />
+                            📚 Output history (last 20 saved)<br />
+                            💬 Enhanced error messages
+                        </p>
+                        <p>
+                            <a
+                                href="https://github.com/moccalatte/contextor"
+                                target="_blank"
+                                >GitHub Repository</a
+                            >
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script src="app.js"></script>
+    </body>
+</html>

@@ -1,0 +1,24 @@
+{
+  "name": "contextor",
+  "version": "1.2.0",
+  "description": "Context Engineering Assistant - Generate context-engineered briefs for AI providers",
+  "main": "index.js",
+  "scripts": {
+    "dev": "wrangler pages dev public --compatibility-date=2024-01-01",
+    "deploy:pages": "wrangler pages deploy public --project-name=contextor",
+    "deploy:worker": "wrangler deploy",
+    "dev:worker": "wrangler dev",
+    "deploy": "npm run deploy:pages && npm run deploy:worker"
+  },
+  "keywords": [
+    "ai",
+    "context",
+    "prompt-engineering",
+    "cloudflare"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "wrangler": "^4.51.0"
+  }
+}
