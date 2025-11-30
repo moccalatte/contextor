@@ -1,12 +1,12 @@
-# 🚀 CONTEXTOR v1.2.0 - Context Engineering Assistant
+# 🚀 CONTEXTOR v1.3.1 - Context Engineering Assistant
 
 **Generate context-engineered prompts for AI models** — ChatGPT, Claude, Midjourney, and more
 
-[![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](https://github.com/yourusername/contextor)
+[![Version](https://img.shields.io/badge/version-1.3.1-blue.svg)](https://github.com/yourusername/contextor)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Free](https://img.shields.io/badge/cost-$0/month-brightgreen.svg)](https://github.com/yourusername/contextor)
 
-> **New in v1.2.0:** 🛡️ Auto-retry logic, ⏱️ Timeout handling, 🏥 Health monitoring, 📚 Output history, 💬 Enhanced error messages
+> **New in v1.3.1:** 🔥 Mode A critical fixes, 📋 10-15 comprehensive questions, ✨ Enhanced parser, 🎯 Multi-provider support (Gemini, Groq, OpenRouter)
 
 ---
 
@@ -23,14 +23,15 @@ CONTEXTOR is a **free, production-ready** context engineering assistant that tra
 - 🔄 **Mode A** - Clarify → Distill workflow for complex requests
 - 🧠 **Mode B** - Chain-of-Thought (CoT) and Program-of-Thought (PoT) reasoning
 
-### 🆕 What's New in v1.2.0
+### 🆕 What's New in v1.3.1
 
-- 🛡️ **Auto-Retry Logic** - 99%+ success rate with exponential backoff
-- ⏱️ **Timeout Handling** - Clear 30-45s timeouts, no infinite waits
-- 🏥 **Health Check System** - Real-time API provider monitoring (`/api/health`)
-- 📚 **Output History** - Last 20 outputs saved in browser (survives refresh)
-- 💬 **Enhanced Error Messages** - User-friendly, actionable guidance
-- 📊 **Better Loading States** - Progress feedback for long requests
+- 🔥 **Mode A Critical Fixes** - Fixed "Input is required" error during distill
+- 📋 **Comprehensive Questions** - 10-15 detailed clarifying questions (up from 3-5)
+- ✨ **Enhanced Parser** - Robust answer parsing with multiple fallback strategies
+- 🤖 **Multi-Provider Support** - Gemini, Groq, OpenRouter with smart fallback
+- 🧠 **New Reasoning Modes** - Tree of Thoughts & ReAct methodologies
+- 🎯 **Better UX** - Enhanced prompt format with original request context
+- ⚡ **Increased Limits** - 2000 char input, 16K tokens for distill stage
 
 **100% FREE** - No API keys required, no usage limits, no credit card needed.
 
@@ -154,7 +155,44 @@ Bayangkan API Key itu kayak "password" buat akses AI gratis. Kita butuh 2 API ke
 
 ---
 
-### API Key #1: OpenRouter
+### API Key #1: Google Gemini (Primary - Recommended)
+
+If you already have OpenRouter key from above, you can skip this. Otherwise follow the same OpenRouter instructions.
+
+**Quota gratis Gemini:**
+- 15 requests per minute
+- 1 million tokens per minute
+- 1,500 requests per day
+- **Output limit: 65,535 tokens** (sekitar 260K-390K karakter!)
+
+---
+
+### API Key #2: Groq (Optional - Fast Alternative)
+
+1. **Buka website Groq Console:**
+   ```
+   https://console.groq.com/keys
+   ```
+
+2. **Sign up dengan email atau GitHub** (gratis)
+
+3. **Klik "Create API Key"**
+
+4. **Copy API key** - akan terlihat seperti:
+   ```
+   gsk_...
+   ```
+
+5. **SIMPAN API key ini**
+
+**Quota gratis Groq:**
+- Very fast inference
+- Multiple model options
+- Free tier available
+
+---
+
+### API Key #3: OpenRouter (Optional - Alternative)
 
 **Step-by-step:**
 
@@ -175,7 +213,7 @@ Bayangkan API Key itu kayak "password" buat akses AI gratis. Kita butuh 2 API ke
 
 ---
 
-### API Key #2: Google Gemini
+### API Key #4: OpenRouter Alternative Models (Optional)
 
 **Step-by-step:**
 
@@ -271,8 +309,9 @@ nano .dev.vars
 
 Nanti terbuka editor. Kamu lihat ini:
 ```
-OPENROUTER_API_KEY=your_openrouter_api_key_here
 GEMINI_API_KEY=your_gemini_api_key_here
+GROQ_API_KEY=your_groq_api_key_here
+OPENROUTER_API_KEY=your_openrouter_api_key_here
 ```
 
 **Ganti:**
@@ -614,7 +653,7 @@ Test kayak tadi:
 - Input: "Lagu pop ceria tentang musim panas"
 - Output: Blueprint lengkap dengan BPM, chord progression, dll.
 
-### Mode A (Clarify → Distill)
+### Mode: Clarify & Distill (Advanced Context)
 
 **Untuk:** Project besar yang butuh klarifikasi.
 
@@ -627,7 +666,7 @@ Test kayak tadi:
 6. Klik "Generate Context"
 7. Dapat context lengkap!
 
-### Mode B (Reasoning)
+### Reasoning Techniques (Advanced)
 
 **Untuk:** Problem solving, coding, analisis.
 

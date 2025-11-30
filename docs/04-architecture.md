@@ -1,14 +1,8 @@
 # 04 — System Architecture
 
-**Product:** CONTEXTOR
-**Version:** 1.0
-**Last Updated:** 29 Nov 2025
-
----
-
-## Purpose
-
-This document defines the system architecture, infrastructure components, and technical design patterns for CONTEXTOR.
+**Product:** CONTEXTOR  
+**Version:** 1.3.1  
+**Last Updated:** 30 Nov 2025
 
 ---
 
@@ -16,62 +10,79 @@ This document defines the system architecture, infrastructure components, and te
 
 ### System Type
 
-- **Architecture:** Serverless, stateless web application
-- **Deployment:** Cloudflare ecosystem (Pages + Workers + AI Gateway)
-- **Design Pattern:** JAMstack (JavaScript, APIs, Markup)
+- **Architecture:** Serverless, stateless JAMstack application
+- **Deployment:** Cloudflare ecosystem (Pages + Workers)
+- **Design Pattern:** API-first, event-driven
+- **State Management:** Client-side only (localStorage)
 
 ### Core Principles
 
-1. **Stateless:** No database, no session storage
+1. **Stateless:** No database, no server-side sessions
 2. **Serverless:** Auto-scaling via Cloudflare Workers
-3. **API-First:** All AI operations via external APIs
-4. **Copy-Paste Workflow:** No persistent user data
-5. **Free-Tier Focus:** No paid infrastructure dependencies
+3. **Multi-Provider:** 3 AI providers with smart fallback
+4. **Free-First:** 100% free tier infrastructure
+5. **Copy-Paste Workflow:** No persistent user data
 
 ---
 
-## 2. System Architecture Diagram
+## 2. High-Level Architecture Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                         USER BROWSER                         │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │           Cloudflare Pages (Frontend)                │   │
-│  │  - React/Vue/Vanilla JS                              │   │
-│  │  - JetBrains Mono typography                         │   │
-│  │  - Emoji-driven UI (✍️🎨🎬🎵)                         │   │
-│  │  - Light mode only                                   │   │
-│  └──────────────────┬──────────────────────────────────┘   │
-└────────────────────┼──────────────────────────────────────┘
-                      │ HTTPS
-                      ▼
-┌─────────────────────────────────────────────────────────────┐
-│              Cloudflare Workers (Backend)                    │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │  Worker: /api/generate                               │   │
-│  │  - Route requests by mode (text/image/video/music)   │   │
-│  │  - Handle Mode A/B logic                             │   │
-│  │  - Execute fallback strategy                         │   │
-│  │  - Format output (text/JSON)                         │   │
-│  └──────────────────┬──────────────────────────────────┘   │
-└────────────────────┼──────────────────────────────────────┘
-                      │
-                      ▼
-┌─────────────────────────────────────────────────────────────┐
-│           Cloudflare AI Gateway (API Router)                 │
-│  - Caching layer                                             │
-│  - Rate limiting                                             │
-│  - Unified API interface                                     │
-│  - Analytics and monitoring                                  │
-└──────────────┬─────────────────────┬────────────────────────┘
-               │                     │
-       ┌───────▼────────┐   ┌───────▼────────┐
-       │  Google Gemini │   │   OpenRouter   │
-       │  (Primary AI)  │   │  (Fallback AI) │
-       │                │   │                │
-       │ Gemini 2.5     │   │ glm-4.5-air    │
-       │ Flash          │   │ :free          │
-       └────────────────┘   └────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                        USER BROWSER                              │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │         Cloudflare Pages (Frontend)                        │  │
+│  │  • Vanilla JavaScript (no frameworks)                      │  │
+│  │  • JetBrains Mono typography                               │  │
+│  │  • Emoji-driven UI (✍️🎨🎬🎵)                               │  │
+│  │  • localStorage (output history)                           │  │
+│  │  • Provider/Model selection UI                             │  │
+│  └─────────────────────┬─────────────────────────────────────┘  │
+└───────────────────────┼────────────────────────────────────────┘
+                        │ HTTPS/JSON
+                        ▼
+┌─────────────────────────────────────────────────────────────────┐
+│           Cloudflare Workers (Backend API)                       │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │  Worker: /api/generate                                     │  │
+│  │  • Route by mode (text/image/video/music)                  │  │
+│  │  • Route by subMode (default/modeA/cot/pot/tree/react)     │  │
+│  │  • Mode A: clarify → distill logic                         │  │
+│  │  • Multi-provider fallback strategy                        │  │
+│  │  • Auto-retry with exponential backoff                     │  │
+│  │  • Timeout handling (30-45s)                               │  │
+│  │  • Input validation & sanitization                         │  │
+│  └─────────────────────┬─────────────────────────────────────┘  │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │  Worker: /api/health                                       │  │
+│  │  • Check Gemini, Groq, OpenRouter                          │  │
+│  │  • Measure latency                                         │  │
+│  │  • Return health status                                    │  │
+│  └───────────────────────────────────────────────────────────┘  │
+└─────────────────────┬───────────────────┬───────────────────────┘
+                      │                   │
+        ┌─────────────▼──────┐   ┌────────▼────────┐
+        │   Primary Route    │   │  Fallback Route  │
+        └─────────────┬──────┘   └────────┬────────┘
+                      │                   │
+        ┌─────────────▼──────────────────▼─────────────────┐
+        │         AI Provider Selection Logic               │
+        │  • User-selected provider (Gemini/Groq/OpenRouter)│
+        │  • Automatic fallback if primary fails            │
+        │  • Retry with exponential backoff                 │
+        │  • Circuit breaker pattern (planned)              │
+        └─────┬──────────────┬──────────────┬──────────────┘
+              │              │              │
+      ┌───────▼───────┐ ┌───▼──────┐ ┌────▼──────────┐
+      │  Google       │ │  Groq    │ │  OpenRouter   │
+      │  Gemini       │ │  API     │ │  API          │
+      │               │ │          │ │               │
+      │ gemini-2.5    │ │ kimi-k2  │ │ glm-4.5-air   │
+      │ -flash        │ │ llama-4  │ │ :free         │
+      │               │ │ gpt-oss  │ │               │
+      │ 65K tokens    │ │ 8K tokens│ │ 4K tokens     │
+      │ 1500 req/day  │ │ 14.4K/day│ │ Free models   │
+      └───────────────┘ └──────────┘ └───────────────┘
 ```
 
 ---
@@ -80,541 +91,814 @@ This document defines the system architecture, infrastructure components, and te
 
 ### 3.1 Frontend (Cloudflare Pages)
 
-**Technology Stack:**
-- HTML5, CSS3, JavaScript (ES6+)
-- Framework: React / Vue / Vanilla JS (TBD during implementation)
-- Typography: JetBrains Mono (monospace)
-- Styling: Minimal CSS, no frameworks
+**Technology:**
+- Vanilla JavaScript (no build step)
+- HTML5 + CSS3
+- localStorage API
+- Clipboard API
 
-**Responsibilities:**
-- Render emoji-driven UI
-- Capture user input
-- Display generated context briefs
-- Handle copy-to-clipboard
-- Send API requests to Workers
-- Display loading states and errors
+**Key Components:**
 
-**Key Features:**
-- Single-page application (SPA)
-- Mode switching (Text ✍️, Image 🎨, Video 🎬, Music 🎵)
-- Output panel with text/JSON toggle
-- Copy button (📋)
-- Settings panel (⚙️)
+```javascript
+// State Management
+const state = {
+  currentMode: "text",              // text|image|video|music
+  currentSubMode: "default",         // default|modeA|cot|pot|tree|react
+  currentOutput: null,               // Generated output
+  modeAStage: null,                  // clarify|distill (Mode A only)
+  modeAQuestions: [],                // Questions from clarify
+  modeAOriginalInput: "",            // Original request
+  selectedProvider: "gemini",        // gemini|groq|openrouter
+  selectedModel: null,               // Provider-specific model
+  healthStatus: null,                // Provider health info
+}
+```
 
-**Hosting:**
-- Cloudflare Pages
-- Automatic HTTPS
-- CDN distribution
-- Instant deployment from Git
+**Files:**
+- `public/index.html` - Main UI structure
+- `public/app.js` - Application logic (1200+ lines)
+- `public/styles.css` - Styling (800+ lines)
+
+**Key Functions:**
+- `handleGenerate()` - Main generation handler
+- `handleModeA()` - Mode A flow controller
+- `modeAClarify()` - Stage 1: Get questions
+- `modeADistill()` - Stage 2: Synthesize context
+- `displayQuestions()` - Enhanced prompt formatter
+- `parseAnswers()` - Answer extraction logic
+- `callAPI()` - Unified API caller
+- `fetchWithTimeout()` - Timeout wrapper
+- `showError()` - Error display
+- `copyToClipboard()` - Copy handler
 
 ---
 
 ### 3.2 Backend (Cloudflare Workers)
 
-**Technology Stack:**
-- JavaScript/TypeScript
+**Technology:**
 - Cloudflare Workers runtime
-- Serverless functions
+- Service Worker API
+- Fetch API
+- Environment variables (secrets)
 
-**Primary Worker: `/api/generate`**
+**File:**
+- `worker/index.js` - Main worker logic (1100+ lines)
 
-**Responsibilities:**
-- Receive user input + mode selection
-- Route to appropriate processing logic
-- Call AI providers via AI Gateway
-- Apply fallback logic on errors
-- Format and return output
+**Key Functions:**
 
-**Worker Endpoints:**
+```javascript
+// Request Handling
+async function handleRequest(request, env)
+  └─> validateRequest(body)
+      ├─> processTextMode(body, env)
+      │   ├─> processModeAClarify(body, env)
+      │   ├─> processModeADistill(body, env)
+      │   └─> processModeB(body, env)
+      ├─> processImageMode(body, env)
+      ├─> processVideoMode(body, env)
+      └─> processMusicMode(body, env)
 
+// AI Provider Layer
+async function callAIWithFallback(systemPrompt, userPrompt, env, options)
+  ├─> callGemini(systemPrompt, userPrompt, env, options)
+  ├─> callGroq(systemPrompt, userPrompt, env, options)
+  └─> callOpenRouter(systemPrompt, userPrompt, env, options)
+
+// Utility Layer
+async function fetchWithRetry(fn, maxRetries)
+async function fetchWithTimeout(fn, timeout)
+async function handleHealthCheck(env)
 ```
-POST /api/generate
-Body: {
-  "mode": "text" | "image" | "video" | "music",
-  "subMode": "default" | "modeA" | "modeB" | "cot" | "pot",
-  "input": "user input text",
-  "stage": "clarify" | "distill" | "brief" (for Mode A),
-  "answers": ["answer1", "answer2"] (for Mode A stage 2)
-}
 
-Response: {
-  "success": true,
-  "output": "generated context brief",
-  "outputJSON": { ... } (optional),
-  "questions": ["q1", "q2"] (for Mode A stage 1)
-}
+**Environment Variables:**
+```bash
+GEMINI_API_KEY         # Required
+GROQ_API_KEY           # Optional (recommended)
+OPENROUTER_API_KEY     # Optional (fallback)
 ```
-
-**Processing Logic:**
-
-1. **Default Text Mode:**
-   - Input → OpenRouter → Context brief
-
-2. **Mode A (Clarify → Distill):**
-   - Stage 1: Input → OpenRouter → Questions
-   - Stage 2: Questions + Answers → Gemini → Distilled context
-   - Stage 3: Return brief
-
-3. **Mode B (CoT/PoT):**
-   - Input → OpenRouter/Gemini → Reasoning output
-
-4. **Image/Video/Music:**
-   - Input → OpenRouter/Gemini → Structured blueprint
-
-**Error Handling:**
-- Try OpenRouter first
-- On failure → fallback to Gemini
-- On Gemini failure → return user-friendly error
-- Log errors (optional: send to Cloudflare Analytics)
 
 ---
 
-### 3.3 AI Gateway (Cloudflare AI Gateway)
+### 3.3 AI Provider Integration
 
-**Purpose:**
-- Unified interface for multiple AI providers
-- Caching to reduce API calls
-- Rate limiting and request throttling
-- Analytics and usage tracking
+#### Gemini 2.5 Flash (Primary)
 
-**Configuration:**
-
-```yaml
-Gateway: contextor-ai-gateway
-Endpoints:
-  - openrouter:
-      url: https://openrouter.ai/api/v1/chat/completions
-      model: z-ai/glm-4.5-air:free
-      cache_ttl: 300 (5 minutes for identical requests)
-
-  - gemini:
-      url: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
-      cache_ttl: 300
+**Endpoint:**
+```
+https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
 ```
 
-**Benefits:**
-- Single point of failure mitigation
-- Reduced latency via caching
-- Centralized API key management
-- Request/response logging
-
----
-
-### 3.4 External AI Providers
-
-#### OpenRouter (Primary)
-
-**Model:** `z-ai/glm-4.5-air:free`
-
-**Use Cases:**
-- Clarification questions (Mode A stage 1)
-- Default text mode
-- Mode B reasoning
-- Image/video/music blueprint generation
-
-**API Format:**
+**Request Format:**
 ```json
-POST https://openrouter.ai/api/v1/chat/completions
 {
-  "model": "z-ai/glm-4.5-air:free",
-  "messages": [
-    {"role": "system", "content": "System prompt"},
-    {"role": "user", "content": "User input"}
+  "contents": [{
+    "parts": [{"text": "prompt"}]
+  }],
+  "generationConfig": {
+    "temperature": 0.7,
+    "maxOutputTokens": 2048,
+    "topP": 0.95,
+    "topK": 40
+  },
+  "safetySettings": [
+    {"category": "HARM_CATEGORY_*", "threshold": "BLOCK_NONE"}
   ]
 }
 ```
 
-**Rate Limits:**
-- Free tier: TBD (check OpenRouter documentation)
-- Fallback strategy applies if limits exceeded
+**Limits:**
+- 1,500 requests/day
+- 15 requests/minute
+- 65,535 tokens output max
+- Free tier: Yes
 
 ---
 
-#### Google Gemini (Fallback)
+#### Groq (Fast Alternative)
 
-**Model:** Gemini 2.5 Flash
+**Endpoint:**
+```
+https://api.groq.com/openai/v1/chat/completions
+```
 
-**Use Cases:**
-- Distillation (Mode A stage 2)
-- Fallback for all modes if OpenRouter fails
-- Alternative reasoning mode
-
-**API Format:**
+**Request Format:**
 ```json
-POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
 {
-  "contents": [
-    {"role": "user", "parts": [{"text": "User input"}]}
+  "model": "moonshotai/kimi-k2-instruct",
+  "messages": [
+    {"role": "system", "content": "system prompt"},
+    {"role": "user", "content": "user prompt"}
   ],
-  "generationConfig": {
-    "temperature": 0.7,
-    "maxOutputTokens": 2048
-  }
+  "temperature": 0.7,
+  "max_tokens": 2048
 }
 ```
 
-**Rate Limits:**
-- Free tier: 1500 requests/day, 15 RPM
-- Sufficient for MVP usage
+**Available Models:**
+- `moonshotai/kimi-k2-instruct` (balanced)
+- `meta-llama/llama-4-maverick-17b-128e-instruct` (fast)
+- `openai/gpt-oss-120b` (comprehensive)
+
+**Limits:**
+- 14,400 requests/day
+- 8,192 tokens output max
+- Ultra-fast inference (<1s)
+- Free tier: Yes
 
 ---
 
-## 4. Data Flow Architecture
+#### OpenRouter (Fallback)
+
+**Endpoint:**
+```
+https://openrouter.ai/api/v1/chat/completions
+```
+
+**Request Format:**
+```json
+{
+  "model": "z-ai/glm-4.5-air:free",
+  "messages": [
+    {"role": "system", "content": "system prompt"},
+    {"role": "user", "content": "user prompt"}
+  ],
+  "temperature": 0.7,
+  "max_tokens": 2048
+}
+```
+
+**Default Model:**
+- `z-ai/glm-4.5-air:free`
+
+**Limits:**
+- Varies by model
+- Free models available
+- 4,096 tokens typical
+- Free tier: Yes
+
+---
+
+## 4. Data Flow Diagrams
 
 ### 4.1 Default Text Mode Flow
 
 ```
-User Input
+User Input (3000 chars max)
     ↓
-Frontend (Cloudflare Pages)
+Frontend Validation
     ↓
-POST /api/generate (Worker)
+POST /api/generate
+    {
+      mode: "text",
+      subMode: "default",
+      input: "...",
+      provider: "gemini",
+      model: null
+    }
     ↓
-Cloudflare AI Gateway
+Worker: processTextMode()
     ↓
-OpenRouter API
+Worker: callAIWithFallback()
+    ├─> Try Gemini (primary)
+    │   ├─ Success → Return
+    │   └─ Fail → Retry (3x)
+    ├─> Try Groq (fallback)
+    │   ├─ Success → Return
+    │   └─ Fail → Retry (1x)
+    └─> Try OpenRouter (last resort)
+        ├─ Success → Return
+        └─ Fail → Error
     ↓
-[If fails → Gemini API]
+Response
+    {
+      success: true,
+      output: "...",
+      provider: "gemini",
+      model: "gemini-2.5-flash"
+    }
     ↓
-Worker processes response
-    ↓
-Frontend displays output
-    ↓
-User copies to clipboard
+Frontend Display + Copy Button
 ```
 
 ---
 
-### 4.2 Mode A (Clarify → Distill) Flow
-
-**Stage 1: Clarification**
+### 4.2 Mode A (Clarify & Distill) Flow
 
 ```
-User Input ("I need to build a web app")
-    ↓
-POST /api/generate (stage: "clarify")
-    ↓
-Worker → AI Gateway → OpenRouter
-    ↓
-OpenRouter generates questions:
-  1. What is the purpose of the app?
-  2. Who are the target users?
-  3. What features are essential?
-    ↓
-Frontend displays questions
-    ↓
-User answers questions
-```
+┌─────────────────────────────────────────────┐
+│ STAGE 1: CLARIFY                             │
+└─────────────────────────────────────────────┘
 
-**Stage 2: Distillation**
+User Input: "Build a YouTube research tool"
+    ↓
+POST /api/generate
+    {
+      mode: "text",
+      subMode: "modeA",
+      stage: "clarify",
+      input: "Build a YouTube research tool",
+      provider: "gemini"
+    }
+    ↓
+Worker: processModeAClarify()
+    ├─ System Prompt: "Generate 10-15 questions..."
+    └─ AI generates comprehensive questions
+    ↓
+Response
+    {
+      success: true,
+      questions: [
+        "What is your target audience?",
+        "What specific data points...",
+        "How will users authenticate...",
+        ... (10-15 total)
+      ]
+    }
+    ↓
+Frontend: displayQuestions()
+    └─ Build enhanced prompt:
+       ORIGINAL REQUEST:
+       "Build a YouTube research tool"
+       
+       TASK: Create comprehensive brief...
+       
+       📋 CLARIFYING QUESTIONS:
+       1. What is your target audience?
+          Answer: 
+       2. What specific data points...
+          Answer: 
+       ...
 
-```
-Questions + Answers
-    ↓
-POST /api/generate (stage: "distill")
-    ↓
-Worker → AI Gateway → Gemini
-    ↓
-Gemini distills context:
-  "E-commerce web app for small businesses,
-   targeting shop owners, key features:
-   product catalog, shopping cart, payment..."
-    ↓
-Frontend displays distilled context
-```
+┌─────────────────────────────────────────────┐
+│ STAGE 2: DISTILL                             │
+└─────────────────────────────────────────────┘
 
-**Stage 3: Context Brief**
-
-```
-Distilled context
+User fills answers in input box
     ↓
-Worker formats as brief
+Frontend: parseAnswers()
+    └─ Extract answers using regex + fallback
     ↓
-Frontend displays final output
+POST /api/generate
+    {
+      mode: "text",
+      subMode: "modeA",
+      stage: "distill",
+      input: "Build a YouTube research tool",  // Original!
+      questions: [...],
+      answers: [...],
+      provider: "gemini"
+    }
     ↓
-User copies to AI provider
-```
-
----
-
-### 4.3 Mode B (CoT/PoT) Flow
-
-```
-User Input + Mode Selection (CoT or PoT)
+Worker: processModeADistill()
+    ├─ Build context:
+    │  ORIGINAL REQUEST: "..."
+    │  QUESTIONS & ANSWERS:
+    │  Q1: ... A1: ...
+    │  Q2: ... A2: ...
+    │  ...
+    └─ AI synthesizes comprehensive brief
     ↓
-POST /api/generate (subMode: "cot" or "pot")
+Response
+    {
+      success: true,
+      output: "Comprehensive context brief...",
+      provider: "gemini"
+    }
     ↓
-Worker → AI Gateway → OpenRouter/Gemini
-    ↓
-AI generates reasoning:
-  - CoT: Step 1, Step 2, Step 3...
-  - PoT: Pseudo-code algorithm
-    ↓
-Frontend displays reasoning output
-    ↓
-User copies to clipboard
-```
-
----
-
-### 4.4 Image/Video/Music Blueprint Flow
-
-```
-User Input ("Cyberpunk cityscape at night")
-    ↓
-POST /api/generate (mode: "image")
-    ↓
-Worker → AI Gateway → OpenRouter/Gemini
-    ↓
-AI generates structured blueprint:
-  Subject: Futuristic cityscape
-  Scene: Neon-lit streets, flying cars
-  Lighting: Neon blue and purple...
-    ↓
-Worker formats as text + JSON
-    ↓
-Frontend displays blueprint
-    ↓
-User copies to Midjourney/Runway/Suno
+Frontend: Display final brief
 ```
 
 ---
 
-## 5. Fallback & Error Handling Architecture
-
-### Fallback Strategy
+### 4.3 Health Check Flow
 
 ```
-┌─────────────────────────────────────────┐
-│  Primary: Gemini 2.5 Flash              │
-└──────────────┬──────────────────────────┘
-               │
-         [API Call]
-               │
-        ┌──────▼──────┐
-        │  Success?   │
-        └──┬───────┬──┘
-           │       │
-         Yes       No
-           │       │
-           │   ┌───▼────────────────────────────┐
-           │   │ Fallback: OpenRouter GLM-4.5   │
-           │   └───┬────────────────────────────┘
-           │       │
-           │   [API Call]
-           │       │
-           │   ┌───▼──────┐
-           │   │ Success? │
-           │   └───┬───┬──┘
-           │       │   │
-           │      Yes  No
-           │       │   │
-           │       │   └───► Error Message
-           │       │
-           └───────┴───► Return Output
+GET /api/health
+    ↓
+Worker: handleHealthCheck()
+    ├─ Test Gemini
+    │  ├─ Send simple prompt
+    │  ├─ Measure latency
+    │  └─ Return status
+    ├─ Test Groq
+    │  ├─ Send simple prompt
+    │  ├─ Measure latency
+    │  └─ Return status
+    └─ Test OpenRouter
+       ├─ Send simple prompt
+       ├─ Measure latency
+       └─ Return status
+    ↓
+Response
+    {
+      status: "healthy",
+      timestamp: "2025-11-30T...",
+      providers: {
+        gemini: {
+          status: "healthy",
+          latency: 1234
+        },
+        groq: {
+          status: "healthy",
+          latency: 567
+        },
+        openrouter: {
+          status: "healthy",
+          latency: 2345
+        }
+      }
+    }
 ```
 
-### Error Types & Responses
+---
 
-| Error | Cause | User Message |
-|-------|-------|--------------|
-| `RATE_LIMIT_EXCEEDED` | API quota hit | "Too many requests. Please try again in a moment." |
-| `API_TIMEOUT` | Slow response | "Request timed out. Please try again." |
-| `INVALID_INPUT` | Empty or malformed input | "Please provide valid input." |
-| `MODEL_UNAVAILABLE` | AI provider down | "Service temporarily unavailable. Try again shortly." |
-| `UNKNOWN_ERROR` | Unexpected failure | "Something went wrong. Please try again." |
+## 5. Error Handling Strategy
+
+### 5.1 Error Classification
+
+```javascript
+// Network Errors
+- Timeout (30-45s)
+- Connection refused
+- DNS failure
+→ Action: Retry with backoff, then fallback provider
+
+// API Errors
+- 400 Bad Request (invalid input)
+- 401 Unauthorized (API key issue)
+- 429 Too Many Requests (rate limit)
+- 500 Internal Server Error
+→ Action: Parse error, show user-friendly message
+
+// AI Provider Errors
+- MAX_TOKENS (response truncated)
+- SAFETY (content blocked)
+- RECITATION (copyright issue)
+→ Action: Extract partial response or fallback
+
+// Application Errors
+- Invalid mode/subMode
+- Missing required fields
+- Parse failure (Mode A answers)
+→ Action: Show specific guidance
+```
+
+### 5.2 Retry Strategy
+
+```javascript
+async function fetchWithRetry(fn, maxRetries = 3) {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await fn();
+    } catch (error) {
+      // Don't retry on these
+      if (error.status === 400) throw error; // Bad input
+      if (error.status === 429) throw error; // Rate limit
+      
+      // Exponential backoff
+      if (i < maxRetries - 1) {
+        await sleep(Math.pow(2, i) * 1000); // 1s, 2s, 4s
+      }
+    }
+  }
+  throw new Error("Max retries exceeded");
+}
+```
+
+### 5.3 Fallback Logic
+
+```javascript
+// Priority order
+1. User-selected provider
+   ├─ Retry 3 times with backoff
+   └─ If fails → go to step 2
+
+2. Alternative provider 1
+   ├─ Retry 1 time
+   └─ If fails → go to step 3
+
+3. Alternative provider 2
+   ├─ Retry 1 time
+   └─ If fails → show error
+
+// Example: User selects Groq
+Groq (3 retries)
+  → OpenRouter (1 retry)
+    → Gemini (1 retry)
+      → Error message
+```
 
 ---
 
 ## 6. Security Architecture
 
-### API Key Management
+### 6.1 Authentication & Authorization
 
-- **Storage:** Cloudflare Workers secrets (environment variables)
-- **Access:** Only Workers can access keys (not exposed to frontend)
-- **Rotation:** Manual rotation via Cloudflare dashboard
+**No User Authentication:**
+- No user accounts
+- No login system
+- No API keys from users
 
-### Data Privacy
+**API Key Management:**
+- Server-side only (Cloudflare secrets)
+- Never exposed to frontend
+- Rotated periodically
 
-- **No Storage:** User inputs/outputs are never stored
-- **No Logging:** User data not logged (optional: anonymized analytics)
-- **HTTPS Only:** All communication encrypted via Cloudflare
-
-### CORS Configuration
+### 6.2 Input Validation
 
 ```javascript
-// Worker CORS headers
-headers: {
-  'Access-Control-Allow-Origin': 'https://contextor.pages.dev',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type'
+function validateRequest(body) {
+  // Mode validation
+  const validModes = ["text", "image", "video", "music"];
+  if (!validModes.includes(mode)) {
+    return error("Invalid mode");
+  }
+  
+  // Length validation
+  const limits = {
+    text: { default: 3000, modeA: 2000, modeB: 2500 },
+    image: 3000,
+    video: 3000,
+    music: 3000
+  };
+  
+  if (input.length > limit) {
+    return error("Input too long");
+  }
+  
+  // Sanitization
+  input = input.replace(/\0/g, ""); // Remove null bytes
+  input = input.replace(/\n{4,}/g, "\n\n\n"); // Limit newlines
+  
+  return { valid: true };
 }
 ```
 
----
+### 6.3 CORS Configuration
 
-## 7. Performance Architecture
+```javascript
+// Allow frontend origin only
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "https://contextor.pages.dev",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Max-Age": "86400"
+};
+```
 
-### Caching Strategy
+### 6.4 Rate Limiting
 
-| Layer | Cache Duration | Purpose |
-|-------|---------------|----------|
-| **Cloudflare CDN** | Static assets: 1 year | Serve HTML/CSS/JS instantly |
-| **AI Gateway** | Identical requests: 5 min | Reduce redundant AI calls |
-| **Browser** | No cache for API responses | Ensure fresh context generation |
-
-### Optimization Techniques
-
-1. **Code Splitting:** Load only active mode's JS
-2. **Lazy Loading:** Load emoji assets on demand
-3. **Minification:** Compress CSS/JS for production
-4. **Edge Compute:** Workers run close to users globally
-
-### Performance Targets
-
-- **Time to Interactive (TTI):** < 2 seconds
-- **First Contentful Paint (FCP):** < 1 second
-- **API Response Time:** < 4 seconds (95th percentile)
+**Strategy:**
+- Rely on Cloudflare Workers free tier limits
+- API provider rate limits handle abuse
+- No custom rate limiting needed (stateless)
 
 ---
 
-## 8. Scalability Architecture
+## 7. Performance Optimization
 
-### Horizontal Scaling
+### 7.1 Current Optimizations
 
-- **Cloudflare Workers:** Auto-scale to millions of requests
-- **No Database Bottleneck:** Stateless design eliminates scaling issues
-- **Global Edge Network:** Workers deployed across 300+ cities
+**Frontend:**
+- No build step (instant deploy)
+- Minimal JavaScript (vanilla, no frameworks)
+- No external dependencies
+- localStorage for history (fast)
+- Debounced input validation
 
-### Vertical Scaling
+**Backend:**
+- Cloudflare Workers edge compute
+- Auto-scaling (no cold starts)
+- Minimal dependencies
+- Efficient prompt construction
+- Smart timeout values
 
-- **Not Applicable:** Serverless architecture handles scaling automatically
+### 7.2 Caching Strategy (Planned)
 
-### Load Testing Assumptions
+```javascript
+// Cloudflare KV for response caching
+async function callAIWithCaching(systemPrompt, userPrompt, env) {
+  const cacheKey = hashInput(systemPrompt + userPrompt);
+  
+  // Check cache
+  const cached = await env.CACHE.get(cacheKey, "json");
+  if (cached) return { ...cached, fromCache: true };
+  
+  // Call AI
+  const result = await callAI(systemPrompt, userPrompt, env);
+  
+  // Store in cache (5min TTL)
+  await env.CACHE.put(cacheKey, JSON.stringify(result), {
+    expirationTtl: 300
+  });
+  
+  return { ...result, fromCache: false };
+}
+```
 
-- **Expected Load (MVP):** 1,000 requests/day
-- **Peak Capacity:** 10,000 requests/day
-- **Scaling Headroom:** 100x capacity available
+### 7.3 Performance Targets
+
+| Metric | Target | Current (v1.3.1) |
+|--------|--------|------------------|
+| Text generation | <5s | ✅ 2-4s |
+| Image blueprint | <5s | ✅ 3-4s |
+| Video blueprint | <6s | ✅ 4-5s |
+| Music blueprint | <5s | ✅ 3-4s |
+| Mode A clarify | <4s | ✅ 2-3s |
+| Mode A distill | <8s | ✅ 5-7s |
+| Health check | <5s | ✅ 2-3s |
+
+---
+
+## 8. Monitoring & Observability
+
+### 8.1 Health Check Endpoint
+
+**URL:** `https://contextor-api.workers.dev/api/health`
+
+**Response:**
+```json
+{
+  "status": "healthy",
+  "timestamp": "2025-11-30T12:34:56.789Z",
+  "providers": {
+    "gemini": {
+      "status": "healthy",
+      "latency": 1234
+    },
+    "groq": {
+      "status": "healthy",
+      "latency": 567
+    },
+    "openrouter": {
+      "status": "healthy",
+      "latency": 2345
+    }
+  }
+}
+```
+
+### 8.2 Cloudflare Analytics
+
+**Available Metrics:**
+- Request count
+- Response time (P50, P95, P99)
+- Error rate
+- Bandwidth usage
+- Geographic distribution
+
+**Dashboard:** Cloudflare Workers Analytics
+
+### 8.3 Console Logging
+
+```javascript
+// Structured logging
+console.log(`Mode A Clarify - input: ${input.length} chars`);
+console.log(`Gemini request - maxTokens: ${maxTokens}`);
+console.log(`Fallback triggered: ${preferredProvider} → ${fallbackProvider}`);
+console.error(`API error: ${error.status} - ${error.message}`);
+```
 
 ---
 
 ## 9. Deployment Architecture
 
-### CI/CD Pipeline
+### 9.1 Deployment Pipeline
 
 ```
-Git Repository (GitHub/GitLab)
+Local Development
+    ├─ npm run dev (Pages)
+    └─ npm run dev:worker (Worker)
     ↓
-Push to main branch
+Git Commit
     ↓
-Cloudflare Pages Auto-Deploy
+GitHub Repository
     ↓
-Build frontend (npm run build)
+Manual Deployment
+    ├─ npm run deploy:pages
+    │  └─> Cloudflare Pages
+    └─ npm run deploy:worker
+       └─> Cloudflare Workers
     ↓
-Deploy to production URL
-    ↓
-Cloudflare Workers Deploy (via Wrangler)
-    ↓
-Production Live
+Production Environment
+    ├─ Pages: https://contextor.pages.dev
+    └─ Worker: https://contextor-api.*.workers.dev
 ```
 
-### Environment Configuration
+### 9.2 Environment Configuration
 
-| Environment | URL | Purpose |
-|-------------|-----|---------|
-| **Production** | `https://contextor.pages.dev` | Live users |
-| **Preview** | `https://[branch].contextor.pages.dev` | PR previews |
-| **Local** | `http://localhost:8788` | Development |
-
-### Secrets Management
-
+**Development (.dev.vars):**
 ```bash
-# Set API keys via Wrangler CLI
-wrangler secret put OPENROUTER_API_KEY
+GEMINI_API_KEY=AIza...
+GROQ_API_KEY=gsk_...
+OPENROUTER_API_KEY=sk-or-v1-...
+```
+
+**Production (Wrangler Secrets):**
+```bash
 wrangler secret put GEMINI_API_KEY
+wrangler secret put GROQ_API_KEY
+wrangler secret put OPENROUTER_API_KEY
+```
+
+### 9.3 Rollback Strategy
+
+**Worker Rollback:**
+```bash
+wrangler deployments list
+wrangler rollback [DEPLOYMENT_ID]
+```
+
+**Pages Rollback:**
+- Cloudflare Dashboard
+- Workers & Pages → contextor → Deployments
+- Select previous deployment → Rollback
+
+---
+
+## 10. Scalability Considerations
+
+### 10.1 Current Limits
+
+**Cloudflare Workers (Free Tier):**
+- 100,000 requests/day
+- 10ms CPU time/request
+- 128MB memory
+- No cold starts
+
+**Cloudflare Pages (Free Tier):**
+- Unlimited requests
+- 500 builds/month
+- 25MB file size limit
+
+**API Providers:**
+- Gemini: 1,500 requests/day
+- Groq: 14,400 requests/day
+- OpenRouter: Varies by model
+
+### 10.2 Scaling Strategy
+
+**Horizontal Scaling:**
+- Cloudflare auto-scales (handled automatically)
+- No manual intervention needed
+
+**Vertical Scaling:**
+- Not applicable (serverless)
+
+**Cost Scaling:**
+- Stay on free tier as long as possible
+- Upgrade to paid if needed:
+  - Workers Paid: $5/month + $0.50/million requests
+  - Gemini Paid: Available if free tier exhausted
+
+### 10.3 Load Distribution
+
+```
+User Request
+    ↓
+Cloudflare Global Network (200+ cities)
+    ├─ Nearest edge location serves request
+    ├─ Worker executes at edge
+    └─ AI provider requests from edge
 ```
 
 ---
 
-## 10. Monitoring & Observability
+## 11. Disaster Recovery
 
-### Metrics to Track
+### 11.1 Backup Strategy
 
-1. **Request Volume:** Total API calls per mode
-2. **Error Rate:** Percentage of failed requests
-3. **Latency:** P50, P95, P99 response times
-4. **Fallback Rate:** How often Gemini fallback is used
-5. **Mode Usage:** Distribution across text/image/video/music
+**Code:**
+- Git repository (GitHub)
+- Multiple local clones
 
-### Monitoring Tools
+**No Data to Backup:**
+- Stateless design
+- No database
+- No user data
 
-- **Cloudflare Analytics:** Built-in dashboard
-- **Custom Logging:** Optional structured logs to external service
-- **Error Tracking:** Sentry or similar (optional)
+### 11.2 Recovery Procedures
+
+**Worker Failure:**
+1. Check Cloudflare status page
+2. Review recent deployments
+3. Rollback to last known good deployment
+4. Check API provider status
+
+**API Provider Outage:**
+1. Automatic fallback to alternative provider
+2. Check provider status pages:
+   - Gemini: https://status.cloud.google.com
+   - Groq: https://status.groq.com
+   - OpenRouter: https://openrouter.ai/status
+3. Wait for recovery (auto-retry handles it)
+
+**Pages Deployment Failure:**
+1. Check build logs
+2. Fix syntax/configuration errors
+3. Redeploy
 
 ---
 
-## 11. Technology Stack Summary
+## 12. Future Architecture Enhancements
 
-| Layer | Technology | Purpose |
-|-------|-----------|---------|
-| **Frontend** | React/Vue/Vanilla JS | UI rendering |
-| **Styling** | CSS3, JetBrains Mono | Minimal design |
-| **Backend** | Cloudflare Workers | Serverless API |
-| **AI Gateway** | Cloudflare AI Gateway | API routing, caching |
-| **Primary AI** | Google Gemini 2.5 Flash | Context generation (all modes) |
-| **Fallback AI** | OpenRouter (glm-4.5-air) | Backup if Gemini fails |
-| **Hosting** | Cloudflare Pages | Static site hosting |
-| **Domain** | Cloudflare DNS | Domain management |
-| **CDN** | Cloudflare CDN | Global content delivery |
-| **Security** | Cloudflare SSL | HTTPS encryption |
+### Phase 1: Caching Layer
+- Cloudflare KV for response caching
+- 30-50% API call reduction
+- 5-minute TTL
+
+### Phase 2: Circuit Breaker
+- Prevent cascading failures
+- Fast-fail on known outages
+- Auto-recovery
+
+### Phase 3: Request Deduplication
+- Prevent duplicate concurrent requests
+- In-memory request tracking
+- Reduce unnecessary API calls
+
+### Phase 4: Streaming Responses
+- Server-sent events (SSE)
+- Real-time output streaming
+- Better UX for long responses
+
+### Phase 5: Analytics
+- Custom metrics collection
+- User behavior tracking (anonymous)
+- A/B testing framework
 
 ---
 
-## 12. Design Patterns & Best Practices
+## Appendix: Configuration Files
 
-### Architectural Patterns
+### wrangler.toml
+```toml
+name = "contextor-api"
+main = "worker/index.js"
+compatibility_date = "2024-01-01"
 
-1. **Serverless Architecture:** No server management, auto-scaling
-2. **API Gateway Pattern:** Unified interface for multiple AI providers
-3. **Retry Pattern:** Fallback logic for resilience
-4. **Stateless Design:** No session or database dependencies
-
-### Code Organization
-
+[vars]
+ENVIRONMENT = "production"
 ```
-/src
-  /components
-    - InputPanel.js
-    - OutputPanel.js
-    - ModeSelector.js
-  /utils
-    - api.js
-    - clipboard.js
-  /styles
-    - global.css
-  App.js
-  index.html
 
-/workers
-  /api
-    - generate.js
-  /utils
-    - ai-provider.js
-    - fallback.js
-  wrangler.toml
+### package.json
+```json
+{
+  "name": "contextor",
+  "version": "1.3.1",
+  "scripts": {
+    "dev": "wrangler pages dev public",
+    "dev:worker": "wrangler dev",
+    "deploy": "npm run deploy:pages && npm run deploy:worker",
+    "deploy:pages": "wrangler pages deploy public",
+    "deploy:worker": "wrangler deploy"
+  }
+}
 ```
 
 ---
 
-## Cross-References
-
-- [01-context.md](01-context.md) — Project overview
-- [03-prd.md](03-prd.md) — Product requirements
-- [05-worker_logic.md](05-worker_logic.md) — Detailed Worker implementation
-- [06-frontend_ui.md](06-frontend_ui.md) — UI design and wireframes
-- [07-prompt_templates.md](07-prompt_templates.md) — AI prompt engineering
-
----
-
-> **Note for AI Builders:** This architecture is designed for MVP simplicity with clear scaling paths. Follow these patterns to maintain consistency and reliability.
+**Architecture Status:** ✅ Production-Ready (v1.3.1)  
+**Total Infrastructure Cost:** $0/month  
+**Auto-Scaling:** Yes (Cloudflare)  
+**High Availability:** Yes (Global edge network)

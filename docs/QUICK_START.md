@@ -1,4 +1,4 @@
-# CONTEXTOR Quick Start Guide
+# CONTEXTOR Quick Start Guide - v1.3.1
 
 Get CONTEXTOR running in **under 10 minutes** with this fast-track guide.
 
@@ -8,9 +8,10 @@ Get CONTEXTOR running in **under 10 minutes** with this fast-track guide.
 # 1. Install dependencies
 npm install
 
-# 2. Get API keys:
-# - OpenRouter: https://openrouter.ai/keys
-# - Gemini: https://aistudio.google.com/app/apikey
+# 2. Get API keys (all FREE):
+# - Gemini: https://aistudio.google.com/app/apikey (RECOMMENDED)
+# - Groq: https://console.groq.com/keys (OPTIONAL - ultra fast)
+# - OpenRouter: https://openrouter.ai/keys (OPTIONAL - fallback)
 
 # 3. Create .dev.vars
 cp .dev.vars.example .dev.vars
@@ -23,8 +24,9 @@ npm run dev               # Terminal 2 (Frontend)
 
 # 5. Deploy
 npx wrangler login
-npx wrangler secret put OPENROUTER_API_KEY
 npx wrangler secret put GEMINI_API_KEY
+npx wrangler secret put GROQ_API_KEY
+npx wrangler secret put OPENROUTER_API_KEY
 npx wrangler deploy
 npx wrangler pages deploy public --project-name=contextor
 ```
@@ -42,15 +44,23 @@ Install these first:
 
 ### 2. Get API Keys (100% Free) 🔑
 
-**OpenRouter (Free GPT-3.5):**
-1. Go to https://openrouter.ai/
-2. Sign in → Keys → Create Key
-3. Copy key (starts with `sk-or-v1-`)
-
-**Google Gemini (Free):**
+**Google Gemini (Primary - RECOMMENDED):**
 1. Go to https://aistudio.google.com/
 2. Get API Key → Create API Key
 3. Copy key (starts with `AIza`)
+4. Free tier: 1,500 requests/day, 65K tokens output
+
+**Groq (Optional - Ultra Fast):**
+1. Go to https://console.groq.com/
+2. Sign in → API Keys → Create API Key
+3. Copy key (starts with `gsk_`)
+4. Free tier: Fast inference, 8K tokens output
+
+**OpenRouter (Optional - Fallback):**
+1. Go to https://openrouter.ai/
+2. Sign in → Keys → Create Key
+3. Copy key (starts with `sk-or-v1-`)
+4. Free models available
 
 ### 3. Setup Project 📦
 
@@ -65,9 +75,12 @@ nano .dev.vars  # or use any editor
 
 Add your keys to `.dev.vars`:
 ```
-OPENROUTER_API_KEY=sk-or-v1-YOUR-KEY
 GEMINI_API_KEY=AIzaYOUR-KEY
+GROQ_API_KEY=gsk_YOUR-KEY
+OPENROUTER_API_KEY=sk-or-v1-YOUR-KEY
 ```
+
+**Note:** You only need GEMINI_API_KEY to start. Groq and OpenRouter are optional for faster performance or fallback.
 
 ### 4. Test Locally 🧪
 
@@ -98,11 +111,14 @@ npx wrangler login
 
 **Add secrets:**
 ```bash
-npx wrangler secret put OPENROUTER_API_KEY
-# Paste your OpenRouter key
-
 npx wrangler secret put GEMINI_API_KEY
 # Paste your Gemini key
+
+npx wrangler secret put GROQ_API_KEY
+# Paste your Groq key (optional)
+
+npx wrangler secret put OPENROUTER_API_KEY
+# Paste your OpenRouter key (optional)
 ```
 
 **Deploy Worker:**
@@ -166,10 +182,11 @@ taskkill /PID <PID> /F
 
 ## Free Tier Limits
 
-✅ **Cloudflare Pages:** Unlimited requests
-✅ **Cloudflare Workers:** 100,000 requests/day
-✅ **OpenRouter:** Free models available
-✅ **Gemini:** 1,500 requests/day
+✅ **Cloudflare Pages:** Unlimited requests  
+✅ **Cloudflare Workers:** 100,000 requests/day  
+✅ **Gemini:** 1,500 requests/day, 65K tokens  
+✅ **Groq:** 14,400 requests/day, ultra-fast  
+✅ **OpenRouter:** Free models available  
 
 **Total cost: $0/month** 💰
 

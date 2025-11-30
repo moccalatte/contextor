@@ -4,13 +4,15 @@
 const state = {
   currentMode: "text",
   currentSubMode: "default",
-  currentReasoning: "cot",
-  modeAStage: null, // 'clarify', 'distill', 'brief'
-  modeAQuestions: [],
   currentOutput: null,
   currentOutputJSON: null,
   healthStatus: null,
   loadingStartTime: null,
+  modeAStage: null, // 'clarify' or 'distill'
+  modeAQuestions: [], // Store questions from clarify stage
+  modeAOriginalInput: "", // Store original input for enhanced prompt
+  selectedProvider: "gemini", // 'gemini', 'openrouter', 'groq'
+  selectedModel: null, // Model name (provider-specific)
 };
 
 // ===========================
@@ -87,6 +89,38 @@ const elements = {
   outputText: document.getElementById("outputText"),
   copyFeedback: document.getElementById("copyFeedback"),
   outputMetadata: document.getElementById("outputMetadata"),
+
+  // Provider & Model Selection
+  providerSelect: document.getElementById("providerSelect"),
+  modelSelect: document.getElementById("modelSelect"),
+  modelRow: document.getElementById("modelRow"),
+};
+
+// ===========================
+// Model Configuration
+// ===========================
+const modelConfig = {
+  gemini: {
+    name: "Gemini",
+    models: [
+      { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash (65K tokens)" },
+    ],
+  },
+  groq: {
+    name: "Groq",
+    models: [
+      { value: "moonshotai/kimi-k2-instruct", label: "Kimi K2 Instruct" },
+      {
+        value: "meta-llama/llama-4-maverick-17b-128e-instruct",
+        label: "Llama 4 Maverick 17B",
+      },
+      { value: "openai/gpt-oss-120b", label: "GPT OSS 120B" },
+    ],
+  },
+  openrouter: {
+    name: "OpenRouter",
+    models: [{ value: "z-ai/glm-4.5-air:free", label: "GLM 4.5 Air (Free)" }],
+  },
 };
 
 // ===========================
@@ -116,35 +150,26 @@ document.querySelectorAll('input[name="submode"]').forEach((radio) => {
   radio.addEventListener("change", (e) => {
     state.currentSubMode = e.target.value;
 
-    // Show/hide reasoning selector for Mode B
-    if (state.currentSubMode === "modeB") {
-      elements.reasoningSelector.classList.remove("hidden");
-    } else {
-      elements.reasoningSelector.classList.add("hidden");
-    }
-
-    // Reset Mode A state when switching away
-    if (state.currentSubMode !== "modeA") {
+    // Reset Mode A state when switching submodes
+    if (state.modeAStage) {
       resetModeA();
     }
   });
 });
 
-// Reasoning selector
-document.querySelectorAll('input[name="reasoning"]').forEach((radio) => {
-  radio.addEventListener("change", (e) => {
-    state.currentReasoning = e.target.value;
-  });
+// Provider selector
+elements.providerSelect.addEventListener("change", (e) => {
+  state.selectedProvider = e.target.value;
+  updateModelDropdown(e.target.value);
+});
+
+// Model selector
+elements.modelSelect.addEventListener("change", (e) => {
+  state.selectedModel = e.target.value;
 });
 
 // Generate button
 elements.generateBtn.addEventListener("click", handleGenerate);
-
-// Questions form (Mode A)
-elements.questionsForm.addEventListener("submit", (e) => {
-  e.preventDefault();
-  handleModeADistill();
-});
 
 // Copy button
 elements.copyBtn.addEventListener("click", handleCopy);
@@ -171,11 +196,42 @@ elements.settingsModal.addEventListener("click", (e) => {
   }
 });
 
+// Initialize model dropdown
+updateModelDropdown(state.selectedProvider);
+
+// ===========================
+// Provider & Model Management
+// ===========================
+function updateModelDropdown(provider) {
+  const config = modelConfig[provider];
+  if (!config) return;
+
+  // Clear existing options
+  elements.modelSelect.innerHTML = "";
+
+  // Add new options
+  config.models.forEach((model) => {
+    const option = document.createElement("option");
+    option.value = model.value;
+    option.textContent = model.label;
+    elements.modelSelect.appendChild(option);
+  });
+
+  // Set first model as default
+  state.selectedModel = config.models[0].value;
+  elements.modelSelect.value = state.selectedModel;
+}
+
 // ===========================
 // Mode Switching
 // ===========================
 function switchMode(mode) {
   state.currentMode = mode;
+
+  // Reset Mode A state when switching modes
+  if (state.modeAStage) {
+    resetModeA();
+  }
 
   // Update active button
   elements.modeBtns.forEach((btn) => {
@@ -194,7 +250,6 @@ function switchMode(mode) {
     elements.subModeSelector.classList.remove("hidden");
   } else {
     elements.subModeSelector.classList.add("hidden");
-    elements.reasoningSelector.classList.add("hidden");
     state.currentSubMode = "default";
   }
 
@@ -209,7 +264,15 @@ function switchMode(mode) {
   // Clear output and errors
   hideOutput();
   hideError();
-  resetModeA();
+}
+
+function resetModeA() {
+  state.modeAStage = null;
+  state.modeAQuestions = [];
+  state.modeAOriginalInput = "";
+  elements.questionsPanel.classList.add("hidden");
+  elements.generateBtnText.textContent = "✨ Generate";
+  elements.inputField.placeholder = placeholders[state.currentMode];
 }
 
 // ===========================
@@ -226,135 +289,11 @@ async function handleGenerate() {
   hideError();
   hideOutput();
 
-  // Determine the flow based on mode and submode
+  // Mode A has special 2-stage flow
   if (state.currentMode === "text" && state.currentSubMode === "modeA") {
-    await handleModeAClarify(input);
+    await handleModeA(input);
   } else {
     await generateContext(input);
-  }
-}
-
-// ===========================
-// Mode A - Clarify Stage
-// ===========================
-async function handleModeAClarify(input) {
-  showLoading("Generating clarifying questions...");
-  disableGenerate();
-
-  try {
-    const response = await fetchWithTimeout(
-      fetch("https://contextor-api.takeakubox.workers.dev/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mode: "text",
-          subMode: "modeA",
-          stage: "clarify",
-          input: input,
-        }),
-      }),
-      45000,
-    );
-
-    const data = await response.json();
-
-    if (!data.success) {
-      throw new Error(data.error?.message || "Failed to generate questions");
-    }
-
-    // Display questions
-    state.modeAQuestions = data.questions;
-    state.modeAStage = "clarify";
-    displayQuestions(data.questions);
-
-    hideLoading();
-  } catch (error) {
-    hideLoading();
-    showError(getErrorMessage(error));
-    enableGenerate();
-  }
-}
-
-// ===========================
-// Display Questions
-// ===========================
-function displayQuestions(questions) {
-  elements.questionsList.innerHTML = "";
-
-  questions.forEach((question, index) => {
-    const questionItem = document.createElement("div");
-    questionItem.className = "question-item";
-
-    const label = document.createElement("label");
-    label.className = "question-label";
-    label.textContent = `${index + 1}. ${question}`;
-
-    const textarea = document.createElement("textarea");
-    textarea.className = "answer-input";
-    textarea.rows = 3;
-    textarea.required = true;
-    textarea.dataset.questionIndex = index;
-
-    questionItem.appendChild(label);
-    questionItem.appendChild(textarea);
-    elements.questionsList.appendChild(questionItem);
-  });
-
-  elements.questionsPanel.classList.remove("hidden");
-  elements.generateBtn.classList.add("hidden");
-}
-
-// ===========================
-// Mode A - Distill Stage
-// ===========================
-async function handleModeADistill() {
-  // Collect answers
-  const answerInputs = elements.questionsList.querySelectorAll(".answer-input");
-  const answers = Array.from(answerInputs).map((input) => input.value.trim());
-
-  // Validate all answers are filled
-  if (answers.some((answer) => !answer)) {
-    showError("Please answer all questions.");
-    return;
-  }
-
-  showLoading("Distilling context from your answers...");
-
-  try {
-    const response = await fetchWithTimeout(
-      fetch("https://contextor-api.takeakubox.workers.dev/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mode: "text",
-          subMode: "modeA",
-          stage: "distill",
-          questions: state.modeAQuestions,
-          answers: answers,
-        }),
-      }),
-      45000,
-    );
-
-    const data = await response.json();
-
-    if (!data.success) {
-      throw new Error(data.error?.message || "Failed to distill context");
-    }
-
-    // Display output
-    displayOutput(data);
-
-    // Save to history
-    saveToHistory(data);
-
-    // Reset Mode A
-    resetModeA();
-    hideLoading();
-    enableGenerate();
-  } catch (error) {
-    hideLoading();
-    showError(getErrorMessage(error));
   }
 }
 
@@ -362,28 +301,31 @@ async function handleModeADistill() {
 // Generate Context (All Modes)
 // ===========================
 async function generateContext(input) {
-  showLoading("Generating comprehensive context...");
+  showLoading();
   disableGenerate();
 
   try {
     const requestBody = {
       mode: state.currentMode,
       input: input,
+      provider: state.selectedProvider,
+      model: state.selectedModel,
     };
 
-    // Add subMode for text mode
-    if (state.currentMode === "text") {
-      if (state.currentSubMode === "modeB") {
-        requestBody.subMode = state.currentReasoning; // 'cot' or 'pot'
-      } else {
-        requestBody.subMode = state.currentSubMode; // 'default'
-      }
+    // Add subMode for Mode B
+    if (
+      state.currentMode === "text" &&
+      (state.currentSubMode === "cot" || state.currentSubMode === "pot")
+    ) {
+      requestBody.subMode = state.currentSubMode;
     }
 
     // Add output format for blueprints
     if (state.currentMode !== "text") {
       requestBody.outputFormat = "both"; // Get both text and JSON
     }
+
+    console.log("Sending request:", requestBody); // Debug log
 
     const response = await fetchWithTimeout(
       fetch("https://contextor-api.takeakubox.workers.dev/api/generate", {
@@ -394,10 +336,25 @@ async function generateContext(input) {
       45000,
     );
 
+    // Check HTTP status
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({
+        error: { message: `HTTP ${response.status}: ${response.statusText}` },
+      }));
+      throw new Error(
+        errorData.error?.message || `Server error: ${response.status}`,
+      );
+    }
+
     const data = await response.json();
 
     if (!data.success) {
       throw new Error(data.error?.message || "Failed to generate context");
+    }
+
+    // Validate output exists
+    if (!data.output) {
+      throw new Error("No output received from server");
     }
 
     displayOutput(data);
@@ -406,10 +363,309 @@ async function generateContext(input) {
     hideLoading();
     enableGenerate();
   } catch (error) {
+    console.error("Generate context error:", error);
     hideLoading();
     showError(getErrorMessage(error));
     enableGenerate();
   }
+}
+
+// ===========================
+// Mode A Handler (Clarify → Distill)
+// ===========================
+async function handleModeA(input) {
+  // Stage 1: Clarify - Get questions
+  if (!state.modeAStage) {
+    await modeAClarify(input);
+  }
+  // Stage 2: Distill - Process answers
+  else if (state.modeAStage === "clarify") {
+    await modeADistill(input);
+  }
+}
+
+async function modeAClarify(input) {
+  showLoading("Generating clarifying questions...");
+
+  // Store original input for later
+  state.modeAOriginalInput = input;
+
+  try {
+    const requestBody = {
+      mode: "text",
+      subMode: "modeA",
+      stage: "clarify",
+      input: input,
+      provider: state.selectedProvider,
+      model: state.selectedModel,
+    };
+
+    console.log("Mode A Clarify request:", requestBody);
+
+    const response = await fetchWithTimeout(
+      fetch("https://contextor-api.takeakubox.workers.dev/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      }),
+      45000,
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({
+        error: { message: `HTTP ${response.status}: ${response.statusText}` },
+      }));
+      throw new Error(
+        errorData.error?.message || `Server error: ${response.status}`,
+      );
+    }
+
+    const data = await response.json();
+
+    if (!data.success || !data.questions) {
+      throw new Error(data.error?.message || "Failed to generate questions");
+    }
+
+    // Store questions and show them
+    state.modeAQuestions = data.questions;
+    state.modeAStage = "clarify";
+
+    displayQuestions(data.questions);
+
+    hideLoading();
+    enableGenerate();
+  } catch (error) {
+    console.error("Mode A Clarify error:", error);
+    hideLoading();
+    showError(getErrorMessage(error));
+    enableGenerate();
+  }
+}
+
+async function modeADistill(answersText) {
+  if (!state.modeAQuestions || state.modeAQuestions.length === 0) {
+    showError("No questions found. Please start over.");
+    return;
+  }
+
+  if (!answersText.trim()) {
+    showError("Please provide answers to the questions.");
+    return;
+  }
+
+  showLoading("Distilling context from your answers...");
+  disableGenerate();
+
+  try {
+    // Parse answers
+    console.log("Original input text length:", answersText.length);
+    console.log("Expected answers count:", state.modeAQuestions.length);
+
+    const answers = parseAnswers(answersText, state.modeAQuestions.length);
+
+    console.log("Parsed answers count:", answers.length);
+    console.log("Parsed answers:", answers);
+
+    const requestBody = {
+      mode: "text",
+      subMode: "modeA",
+      stage: "distill",
+      input: state.modeAOriginalInput, // Send original input for context
+      questions: state.modeAQuestions,
+      answers: answers,
+      provider: state.selectedProvider,
+      model: state.selectedModel,
+    };
+
+    console.log("Mode A Distill request:", requestBody);
+
+    const response = await fetchWithTimeout(
+      fetch("https://contextor-api.takeakubox.workers.dev/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      }),
+      45000,
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({
+        error: { message: `HTTP ${response.status}: ${response.statusText}` },
+      }));
+      throw new Error(
+        errorData.error?.message || `Server error: ${response.status}`,
+      );
+    }
+
+    const data = await response.json();
+
+    if (!data.success || !data.output) {
+      throw new Error(data.error?.message || "Failed to distill context");
+    }
+
+    // Reset Mode A state
+    state.modeAStage = null;
+    state.modeAQuestions = [];
+
+    // Hide questions panel
+    elements.questionsPanel.classList.add("hidden");
+
+    // Show final output
+    displayOutput(data);
+    saveToHistory(data);
+
+    hideLoading();
+    enableGenerate();
+  } catch (error) {
+    console.error("Mode A Distill error:", error);
+    hideLoading();
+    showError(getErrorMessage(error));
+    enableGenerate();
+  }
+}
+
+function displayQuestions(questions) {
+  // Build enhanced prompt with original input + questions
+  let enhancedPrompt = "";
+
+  // Add original input context
+  if (state.modeAOriginalInput) {
+    enhancedPrompt += `ORIGINAL REQUEST:\n"${state.modeAOriginalInput}"\n\n`;
+    enhancedPrompt += `TASK: Create comprehensive context engineering brief for the above request.\n\n`;
+  }
+
+  enhancedPrompt +=
+    "📋 CLARIFYING QUESTIONS - Please provide detailed answers:\n\n";
+
+  questions.forEach((q, i) => {
+    enhancedPrompt += `${i + 1}. ${q}\n   Answer: \n\n`;
+  });
+
+  enhancedPrompt +=
+    "\n💡 TIP: Fill in your answers next to 'Answer:' for each question above.";
+
+  // Set the enhanced prompt in the input field
+  elements.inputField.value = enhancedPrompt;
+
+  // Focus on the input field and position cursor after first "Answer:"
+  elements.inputField.focus();
+  const firstAnswerPos = enhancedPrompt.indexOf("Answer:") + 8;
+  elements.inputField.setSelectionRange(firstAnswerPos, firstAnswerPos);
+
+  // Hide questions panel (we're showing everything in input box now)
+  elements.questionsPanel.classList.add("hidden");
+
+  // Change button text and placeholder
+  elements.generateBtnText.textContent = "💫 Distill Context";
+  elements.inputField.placeholder =
+    "Provide detailed answers to each question...";
+
+  // Questions are now shown directly in input box, no separate panel needed
+  elements.questionsPanel.classList.add("fade-in");
+}
+
+function parseAnswers(text, expectedCount) {
+  // Remove header sections first
+  let cleanText = text;
+
+  // Remove ORIGINAL REQUEST section if present
+  cleanText = cleanText.replace(/ORIGINAL REQUEST:[\s\S]*?(?=\n\n|📋)/gi, "");
+
+  // Remove TASK section if present
+  cleanText = cleanText.replace(/TASK:[\s\S]*?(?=\n\n|📋)/gi, "");
+
+  // Remove the 📋 header
+  cleanText = cleanText.replace(/📋 CLARIFYING QUESTIONS.*?\n\n/gi, "");
+
+  // Remove the 💡 TIP footer
+  cleanText = cleanText.replace(/💡 TIP:.*$/gi, "");
+
+  // Primary method: extract answers from "Answer: xxx" pattern
+  const answerPattern = /Answer:\s*(.+?)(?=\n\s*\d+\.|Answer:|$)/gis;
+  const matches = [...cleanText.matchAll(answerPattern)];
+
+  if (matches.length > 0) {
+    const answers = matches
+      .map((match) => match[1].trim())
+      .filter((a) => a.length > 0 && !a.match(/^(ORIGINAL|TASK|📋|💡)/));
+
+    if (answers.length >= expectedCount * 0.7) {
+      // Got at least 70% of expected answers
+      while (answers.length < expectedCount) {
+        answers.push("");
+      }
+      return answers.slice(0, expectedCount);
+    }
+  }
+
+  // Fallback 1: Try numbered format "1. answer\n2. answer\n..."
+  // But skip the question numbers themselves
+  const lines = cleanText.split("\n");
+  const answers = [];
+  let currentAnswer = "";
+  let inAnswer = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+
+    // Skip empty lines and headers
+    if (!line || line.match(/^(ORIGINAL|TASK|📋|💡)/)) {
+      continue;
+    }
+
+    // Check if this is a question line (number followed by text)
+    if (line.match(/^\d+\./)) {
+      // Save previous answer if exists
+      if (inAnswer && currentAnswer) {
+        answers.push(currentAnswer.trim());
+        currentAnswer = "";
+      }
+      inAnswer = false;
+      continue;
+    }
+
+    // Check if this is an answer line
+    if (line.startsWith("Answer:") || inAnswer) {
+      inAnswer = true;
+      const answerText = line.replace(/^Answer:\s*/, "");
+      currentAnswer += (currentAnswer ? " " : "") + answerText;
+    }
+  }
+
+  // Add last answer
+  if (currentAnswer) {
+    answers.push(currentAnswer.trim());
+  }
+
+  // Final fallback: just extract non-question text
+  if (answers.length < expectedCount * 0.5) {
+    const fallbackAnswers = lines
+      .filter((line) => {
+        const trimmed = line.trim();
+        return (
+          trimmed &&
+          !trimmed.match(/^\d+\./) &&
+          !trimmed.startsWith("Answer:") &&
+          !trimmed.match(/^(ORIGINAL|TASK|📋|💡)/)
+        );
+      })
+      .map((line) => line.trim())
+      .filter((line) => line.length > 3);
+
+    if (fallbackAnswers.length > answers.length) {
+      while (fallbackAnswers.length < expectedCount) {
+        fallbackAnswers.push("");
+      }
+      return fallbackAnswers.slice(0, expectedCount);
+    }
+  }
+
+  // Pad with empty strings if needed
+  while (answers.length < expectedCount) {
+    answers.push("");
+  }
+
+  return answers.slice(0, expectedCount);
 }
 
 // ===========================
@@ -514,6 +770,11 @@ function hideError() {
 
 function hideOutput() {
   elements.outputPanel.classList.add("hidden");
+
+  // Also hide questions panel if switching away
+  if (!state.modeAStage) {
+    elements.questionsPanel.classList.add("hidden");
+  }
 }
 
 function disableGenerate() {
@@ -522,13 +783,6 @@ function disableGenerate() {
 
 function enableGenerate() {
   elements.generateBtn.disabled = false;
-}
-
-function resetModeA() {
-  state.modeAStage = null;
-  state.modeAQuestions = [];
-  elements.questionsPanel.classList.add("hidden");
-  elements.generateBtn.classList.remove("hidden");
 }
 
 // ===========================

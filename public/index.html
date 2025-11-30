@@ -68,29 +68,48 @@
                     </label>
                     <label>
                         <input type="radio" name="submode" value="modeA" />
-                        <span>Mode A (Clarify → Distill)</span>
+                        <span>Clarify & Distill</span>
                     </label>
                     <label>
-                        <input type="radio" name="submode" value="modeB" />
-                        <span>Mode B (Reasoning)</span>
+                        <input type="radio" name="submode" value="cot" />
+                        <span>CoT (Chain-of-Thought)</span>
+                    </label>
+                    <label>
+                        <input type="radio" name="submode" value="pot" />
+                        <span>PoT (Program-of-Thought)</span>
+                    </label>
+                    <label>
+                        <input type="radio" name="submode" value="tree" />
+                        <span>Tree of Thoughts</span>
+                    </label>
+                    <label>
+                        <input type="radio" name="submode" value="react" />
+                        <span>ReAct (Reasoning + Acting)</span>
                     </label>
                 </div>
 
-                <!-- CoT/PoT Selector (only visible for Mode B) -->
-                <div class="reasoning-selector hidden" id="reasoningSelector">
-                    <label>
-                        <input
-                            type="radio"
-                            name="reasoning"
-                            value="cot"
-                            checked
-                        />
-                        <span>Chain-of-Thought (CoT)</span>
-                    </label>
-                    <label>
-                        <input type="radio" name="reasoning" value="pot" />
-                        <span>Program-of-Thought (PoT)</span>
-                    </label>
+                <!-- AI Provider & Model Selector -->
+                <div class="provider-selector" id="providerSelector">
+                    <div class="provider-row">
+                        <label for="providerSelect">AI Provider:</label>
+                        <select id="providerSelect" class="provider-dropdown">
+                            <option value="gemini" selected>
+                                Gemini 2.5 Flash (Free)
+                            </option>
+                            <option value="groq">Groq (Free)</option>
+                            <option value="openrouter">
+                                OpenRouter (Free)
+                            </option>
+                        </select>
+                    </div>
+                    <div class="model-row" id="modelRow">
+                        <label for="modelSelect">Model:</label>
+                        <select id="modelSelect" class="model-dropdown">
+                            <option value="gemini-2.5-flash">
+                                Gemini 2.5 Flash
+                            </option>
+                        </select>
+                    </div>
                 </div>
 
                 <button class="btn-primary" id="generateBtn">
@@ -99,16 +118,17 @@
                 </button>
             </div>
 
-            <!-- Questions Panel (Mode A Stage 1) -->
+            <!-- Questions Panel (Mode A) -->
             <div class="questions-panel hidden" id="questionsPanel">
-                <h3 class="questions-title">Clarifying Questions</h3>
-                <form id="questionsForm">
-                    <div id="questionsList"></div>
-                    <button type="submit" class="btn-primary">
-                        <span class="emoji">✨</span>
-                        <span>Generate Context</span>
-                    </button>
-                </form>
+                <div class="questions-header">
+                    <h2 class="questions-title">📋 Clarifying Questions</h2>
+                    <p class="questions-subtitle">
+                        Please answer all questions below in the input box
+                    </p>
+                </div>
+                <div class="questions-content" id="questionsList">
+                    <!-- Questions will be dynamically inserted here -->
+                </div>
             </div>
 
             <!-- Loading State -->
@@ -180,13 +200,24 @@
                     </p>
                     <div class="settings-section">
                         <h3>About</h3>
-                        <p>Version: 1.2.0</p>
+                        <p>Version: 1.3.1</p>
                         <p>
                             A context engineering assistant for AI prompt
                             optimization.
                         </p>
                         <p>
-                            <strong>New in v1.2.0:</strong><br />
+                            <strong>New in v1.3.0:</strong><br />
+                            🤖 Multiple AI provider support (Gemini, Groq,
+                            OpenRouter)<br />
+                            🎯 Model selection for each provider<br />
+                            🧠 New reasoning techniques (Tree of Thoughts,
+                            ReAct)<br />
+                            🔧 Enhanced Mode A with better UI/UX<br />
+                            📊 Optimized prompting for 65K token limit<br />
+                            🛡️ Improved error prevention and handling
+                        </p>
+                        <p>
+                            <strong>Previous features:</strong><br />
                             🛡️ Auto-retry with exponential backoff<br />
                             ⏱️ Smart timeout handling (30-45s)<br />
                             🏥 Real-time health monitoring<br />

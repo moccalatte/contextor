@@ -1,6 +1,6 @@
 # 📚 DOCUMENTATION OVERVIEW
 
-**CONTEXTOR v1.2.0** - Complete documentation guide
+**CONTEXTOR v1.3.1** - Complete documentation guide
 
 ---
 
@@ -11,7 +11,7 @@ Start here if you're new to CONTEXTOR or coding:
 
 1. **[README.md](README.md)** - Complete setup guide (step-by-step)
 2. **[QUICK_START.md](QUICK_START.md)** - Quick deployment guide
-3. **[QUICK_ERROR_REFERENCE.md](QUICK_ERROR_REFERENCE.md)** - Quick troubleshooting
+3. **[ERROR_GUIDE.md](ERROR_GUIDE.md)** - Comprehensive error reference
 
 **Time:** 30 minutes to deploy your first instance
 
@@ -23,8 +23,7 @@ Start here if you're new to CONTEXTOR or coding:
 - **[DEPLOYMENT_CHECKLIST.md](DEPLOYMENT_CHECKLIST.md)** - Pre/post deployment checklist
 
 ### Troubleshooting
-- **[QUICK_ERROR_REFERENCE.md](QUICK_ERROR_REFERENCE.md)** - Quick fixes (1 page)
-- **[ERROR_GUIDE.md](ERROR_GUIDE.md)** - Comprehensive error reference (790 lines)
+- **[ERROR_GUIDE.md](ERROR_GUIDE.md)** - Comprehensive error reference
 
 ### Health Monitoring
 ```bash
@@ -50,13 +49,14 @@ curl https://your-worker.workers.dev/api/health
 
 ## 🎯 Features & Roadmap
 
-### Current Features (v1.2.0)
+### Current Features (v1.3.1)
+- ✅ Multi-provider support (Gemini, Groq, OpenRouter)
+- ✅ Mode A critical fixes (10-15 questions, enhanced parser)
+- ✅ New reasoning modes (Tree of Thoughts, ReAct)
 - ✅ Auto-retry with exponential backoff
 - ✅ Timeout handling (30-45s)
 - ✅ Health check system
 - ✅ Output history (20 items)
-- ✅ Enhanced error messages
-- ✅ Better loading states
 
 ### Future Features (All FREE)
 - **[FEATURES.md](FEATURES.md)** - Complete feature roadmap (1089 lines)
@@ -74,23 +74,17 @@ curl https://your-worker.workers.dev/api/health
 
 ## 📖 Release Information
 
-### Latest Release (v1.2.0)
-- **[V1.2.0_RELEASE_NOTES.md](V1.2.0_RELEASE_NOTES.md)** - Complete release notes (English)
-- **[RINGKASAN_UPDATE_v1.2.0.md](RINGKASAN_UPDATE_v1.2.0.md)** - Release summary (Indonesian)
+### Latest Release (v1.3.1)
+- **[CHANGELOG.md](CHANGELOG.md)** - Complete version history with v1.3.1 details
 
-### Version History
-- **[CHANGELOG.md](CHANGELOG.md)** - Complete version history
+
 
 ---
 
-## 🌐 Language-Specific Guides
+## 🌐 Primary Documentation
 
-### Indonesian 🇮🇩
-- **[RINGKASAN_UPDATE_v1.2.0.md](RINGKASAN_UPDATE_v1.2.0.md)** - v1.2.0 summary
-
-### English 🇬🇧
-- **[README.md](README.md)** - Main guide
-- **[V1.2.0_RELEASE_NOTES.md](V1.2.0_RELEASE_NOTES.md)** - Release notes
+- **[README.md](README.md)** - Main guide (English)
+- **[CHANGELOG.md](CHANGELOG.md)** - Complete version history
 
 ---
 
@@ -112,7 +106,7 @@ curl https://your-worker.workers.dev/api/health
 → [README.md](README.md) or [QUICK_START.md](QUICK_START.md)
 
 **Fix an error**
-→ [QUICK_ERROR_REFERENCE.md](QUICK_ERROR_REFERENCE.md) or [ERROR_GUIDE.md](ERROR_GUIDE.md)
+→ [ERROR_GUIDE.md](ERROR_GUIDE.md)
 
 **Add new features**
 → [FEATURES.md](FEATURES.md) or [docs/guides/feature_recommendations.md](docs/guides/feature_recommendations.md)
@@ -124,7 +118,7 @@ curl https://your-worker.workers.dev/api/health
 → [docs/guides/stability_guide.md](docs/guides/stability_guide.md)
 
 **Check what's new**
-→ [CHANGELOG.md](CHANGELOG.md) or [V1.2.0_RELEASE_NOTES.md](V1.2.0_RELEASE_NOTES.md)
+→ [CHANGELOG.md](CHANGELOG.md)
 
 **Learn AI prompting**
 → [docs/07-prompt_templates.md](docs/07-prompt_templates.md)
@@ -146,15 +140,15 @@ All features use free tiers:
 
 ## 🆘 Need Help?
 
-1. **Quick fixes:** [QUICK_ERROR_REFERENCE.md](QUICK_ERROR_REFERENCE.md)
+1. **Quick fixes:** [ERROR_GUIDE.md](ERROR_GUIDE.md)
 2. **Setup help:** [README.md](README.md)
 3. **Errors:** [ERROR_GUIDE.md](ERROR_GUIDE.md)
 4. **Technical:** [docs/README.md](docs/README.md)
 
 ---
 
-**Version:** 1.2.0  
-**Last Updated:** 29 November 2025  
+**Version:** 1.3.1  
+**Last Updated:** 30 November 2025  
 **Status:** Production-Ready
 
 🚀 **Ready to deploy? Start with [README.md](README.md)!**

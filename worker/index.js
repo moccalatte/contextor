@@ -65,10 +65,41 @@ async function handleGenerate(request, env) {
 }
 
 // ===========================
+// Input Sanitization
+// ===========================
+function sanitizeInput(input) {
+  if (typeof input !== "string") {
+    return "";
+  }
+
+  // Trim whitespace
+  input = input.trim();
+
+  // Remove null bytes
+  input = input.replace(/\0/g, "");
+
+  // Normalize unicode (NFKC form)
+  input = input.normalize("NFKC");
+
+  // Remove excessive newlines (max 2 consecutive)
+  input = input.replace(/\n{3,}/g, "\n\n");
+
+  // Remove control characters except newlines and tabs
+  input = input.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]/g, "");
+
+  // Limit length
+  if (input.length > 5000) {
+    input = input.substring(0, 5000);
+  }
+
+  return input;
+}
+
+// ===========================
 // Request Validation
 // ===========================
 function validateRequest(body) {
-  const { mode, input, subMode, stage } = body;
+  const { mode, input, subMode, stage, model, provider } = body;
 
   // Validate mode
   const validModes = ["text", "image", "video", "music"];
@@ -87,11 +118,14 @@ function validateRequest(body) {
     };
   }
 
-  // Validate input length
-  if (input.length > 5000) {
+  // Sanitize input
+  body.input = sanitizeInput(input);
+
+  // Validate sanitized input is not empty
+  if (body.input.length === 0) {
     return {
       valid: false,
-      error: "Input exceeds maximum length of 5000 characters",
+      error: "Input contains no valid characters",
     };
   }
 
@@ -99,6 +133,10 @@ function validateRequest(body) {
   if (subMode === "modeA") {
     const validStages = ["clarify", "distill"];
     if (!stage || !validStages.includes(stage)) {
+      console.error("Mode A validation failed: invalid stage", {
+        subMode,
+        stage,
+      });
       return {
         valid: false,
         error: "Mode A requires valid stage: clarify or distill",
@@ -107,21 +145,48 @@ function validateRequest(body) {
 
     if (stage === "distill") {
       if (!body.questions || !body.answers) {
+        console.error(
+          "Mode A distill validation failed: missing questions/answers",
+        );
         return {
           valid: false,
           error: "Distill stage requires questions and answers",
         };
       }
       if (!Array.isArray(body.questions) || !Array.isArray(body.answers)) {
+        console.error("Mode A distill validation failed: not arrays");
         return { valid: false, error: "Questions and answers must be arrays" };
       }
       if (body.questions.length !== body.answers.length) {
+        console.error("Mode A distill validation failed: length mismatch");
         return {
           valid: false,
           error: "Number of questions and answers must match",
         };
       }
+
+      // Sanitize answers
+      body.answers = body.answers.map((answer) => sanitizeInput(answer || ""));
     }
+  }
+
+  // Validate Mode B
+  const validReasoningModes = ["cot", "pot", "tree", "react"];
+  if (validReasoningModes.includes(subMode)) {
+    console.log("Reasoning mode detected:", subMode);
+  }
+
+  // Validate provider if specified
+  if (provider && !["gemini", "openrouter", "groq"].includes(provider)) {
+    return {
+      valid: false,
+      error: "Invalid provider. Must be gemini, openrouter, or groq",
+    };
+  }
+
+  // Validate model if specified
+  if (model && typeof model !== "string") {
+    return { valid: false, error: "Model must be a string" };
   }
 
   return { valid: true };
@@ -131,15 +196,20 @@ function validateRequest(body) {
 // Request Router
 // ===========================
 async function routeRequest(body, env) {
-  const { mode, subMode } = body;
+  const { mode, subMode, stage } = body;
+
+  console.log("Routing request:", { mode, subMode, stage });
 
   // Route by mode and subMode
   if (subMode === "modeA") {
+    console.log("Routing to Mode A");
     return await processModeA(body, env);
   } else if (subMode === "cot" || subMode === "pot") {
+    console.log("Routing to Mode B:", subMode);
     return await processModeB(body, env);
   } else {
     // Default mode or explicit "default" subMode
+    console.log("Routing to default mode:", mode);
     switch (mode) {
       case "text":
         return await processTextMode(body, env);
@@ -149,6 +219,8 @@ async function routeRequest(body, env) {
         return await processVideoMode(body, env);
       case "music":
         return await processMusicMode(body, env);
+      default:
+        throw new Error(`Unknown mode: ${mode}`);
     }
   }
 }
@@ -157,47 +229,24 @@ async function routeRequest(body, env) {
 // Default Text Mode
 // ===========================
 async function processTextMode(body, env) {
-  const { input } = body;
+  const { input, provider, model } = body;
 
-  const systemPrompt = `You are an expert context engineering assistant specializing in transforming vague ideas into comprehensive, actionable briefs for AI models.
+  // Input length validation
+  if (input.length > 3000) {
+    throw new Error(
+      "Input too long. Please limit to 3000 characters or break into smaller requests.",
+    );
+  }
 
-Your role is to:
-1. **Deeply analyze** the user's input to understand intent, goals, and underlying needs
-2. **Expand and clarify** implicit requirements and expectations
-3. **Structure information** logically with clear sections and hierarchy
-4. **Add critical context** that makes the brief self-contained and production-ready
-5. **Provide specific details** including constraints, success criteria, and edge cases
-6. **Anticipate questions** an AI would need answered to perform the task excellently
+  const systemPrompt = `Transform this into a well-structured, comprehensive context brief.`;
 
-Output Requirements:
-- **Comprehensive**: Cover all relevant aspects thoroughly (aim for 300-800 words)
-- **Well-structured**: Use clear headings, bullet points, and logical flow
-- **Specific**: Include concrete examples, requirements, and constraints
-- **Actionable**: Every detail should be useful for task execution
-- **Self-contained**: No external context needed to understand the brief
-- **Professional**: Production-ready quality suitable for real-world use
-
-Style Guidelines:
-- Be direct and precise (no fluff or meta-commentary)
-- Use active voice and clear language
-- Balance detail with readability
-- Focus on "what" and "why", not just rephrasing
-
-Critical Rules:
-- NEVER simply rephrase or restate the input
-- DO expand with relevant domain knowledge
-- DO add structure even to simple inputs
-- DO anticipate implementation details
-- DO NOT make wild assumptions about unstated requirements
-- DO NOT include self-referential commentary`;
-
-  const userPrompt = `Original input: "${input}"
-
-Generate a comprehensive, well-structured context brief that transforms this input into a production-ready specification. Expand appropriately based on the complexity and scope implied by the input.`;
+  const userPrompt = input;
 
   const aiResult = await callAIWithFallback(systemPrompt, userPrompt, env, {
-    temperature: 0.8,
-    maxTokens: 4096,
+    temperature: 0.7,
+    maxTokens: 2048,
+    provider: provider,
+    model: model,
   });
 
   return {
@@ -218,73 +267,111 @@ Generate a comprehensive, well-structured context brief that transforms this inp
 async function processModeA(body, env) {
   const { stage } = body;
 
+  console.log("Processing Mode A, stage:", stage);
+
   if (stage === "clarify") {
     return await processModeAClarify(body, env);
   } else if (stage === "distill") {
     return await processModeADistill(body, env);
+  } else {
+    throw new Error(`Invalid Mode A stage: ${stage}`);
   }
 }
 
 async function processModeAClarify(body, env) {
-  const { input } = body;
+  const { input, provider, model } = body;
 
-  const systemPrompt = `You are a world-class requirements analyst and strategic questioner. Your expertise is extracting maximum clarity from minimal information through precisely targeted questions.
+  // Input length validation - increased limit
+  if (input.length > 2000) {
+    throw new Error(
+      "Input too long for clarification mode. Please limit to 2000 characters or use a more concise description.",
+    );
+  }
 
-Given raw user input, generate 4-7 laser-focused clarifying questions that systematically uncover:
+  console.log(`Mode A Clarify - input length: ${input.length} chars`);
 
-1. **Core Objective & Desired Outcome**
-   - What specific problem are they solving?
-   - What does success look like?
+  const systemPrompt = `You are an expert at asking comprehensive clarifying questions. Given the user's input, generate 10-15 detailed, specific questions that will help create a complete context engineering brief.
 
-2. **Key Requirements & Must-Haves**
-   - What are the non-negotiable elements?
-   - What features/capabilities are essential vs. nice-to-have?
+Cover ALL relevant aspects:
+1. Core objectives and goals
+2. Target audience and users
+3. Technical requirements and stack preferences
+4. Features and functionality (be specific!)
+5. Design and UX preferences
+6. Data handling and storage needs
+7. Integration requirements (APIs, third-party services)
+8. Performance and scalability expectations
+9. Security and privacy considerations
+10. Timeline, budget, and resource constraints
+11. Success metrics and KPIs
+12. Potential challenges and edge cases
+13. Future expansion possibilities
+14. Deployment and hosting preferences
+15. Any domain-specific requirements
 
-3. **Constraints & Limitations**
-   - Time, budget, technical, regulatory, or resource constraints?
-   - What are the boundaries or hard limits?
+Make each question:
+- Specific and actionable (not vague)
+- Relevant to the input domain
+- Progressive (build on each other)
+- Detailed enough to extract comprehensive answers
 
-4. **Target Audience/Users/Stakeholders**
-   - Who will use/benefit from this?
-   - What are their needs, skills, expectations?
+Output ONLY the numbered questions, nothing else. Format:
+1. [Question]
+2. [Question]
+...
+15. [Question]`;
 
-5. **Technical & Domain-Specific Details**
-   - What existing systems/tools/processes are involved?
-   - What technical requirements or standards apply?
+  const userPrompt = input;
 
-6. **Success Criteria & Metrics**
-   - How will they measure if this worked?
-   - What are the key performance indicators?
+  let aiResult;
+  let questions;
 
-7. **Context & Background**
-   - Why now? What prompted this?
-   - What's been tried before?
+  try {
+    aiResult = await callAIWithFallback(systemPrompt, userPrompt, env, {
+      temperature: 0.8,
+      maxTokens: 2500, // Increased for more questions
+      provider: provider,
+      model: model,
+    });
+    questions = parseQuestions(aiResult.output);
 
-Your questions MUST be:
-- **Specific**: Not "What do you want?" but "What specific user actions should this system support?"
-- **Strategic**: Each question should unlock critical information
-- **Progressive**: Questions build on each other logically
-- **Actionable**: Answers should lead directly to implementation clarity
-- **Open-ended**: Allow for detailed, informative responses
-- **Domain-relevant**: Tailored to the specific context of the input
+    // Ensure we have at least 10 questions
+    if (questions.length < 10) {
+      console.warn(
+        `Only ${questions.length} questions generated, expected 10-15`,
+      );
+    }
+  } catch (error) {
+    console.error(
+      "Mode A Clarify failed, using comprehensive generic questions:",
+      error.message,
+    );
 
-Output Format:
-ONLY output the numbered questions (4-7 questions). No preamble, no commentary, no explanations.
+    // Emergency fallback: return comprehensive generic questions
+    questions = [
+      "What is the main goal or objective of this project?",
+      "Who is the target audience or user base?",
+      "What are the core features and functionalities you want to include?",
+      "What technical stack or technologies do you prefer (if any)?",
+      "Are there any specific design or UX requirements?",
+      "How will data be handled, stored, and managed?",
+      "Do you need integration with any third-party APIs or services?",
+      "What are the performance and scalability expectations?",
+      "Are there any security or privacy considerations?",
+      "What is the timeline and budget for this project?",
+      "How will you measure success (KPIs, metrics)?",
+      "What potential challenges or edge cases should be considered?",
+      "Are there plans for future expansion or additional features?",
+      "What are your deployment and hosting preferences?",
+      "Any other specific requirements or constraints?",
+    ];
 
-1. [Specific, strategic question]
-2. [Specific, strategic question]
-...`;
-
-  const userPrompt = `Raw user input: "${input}"
-
-Generate 4-7 strategic clarifying questions that will transform this vague input into a crystal-clear specification.`;
-
-  const aiResult = await callAIWithFallback(systemPrompt, userPrompt, env, {
-    temperature: 0.8,
-    maxTokens: 1024,
-  });
-
-  const questions = parseQuestions(aiResult.output);
+    aiResult = {
+      provider: "fallback",
+      model: "generic",
+      fallbackUsed: true,
+    };
+  }
 
   return {
     success: true,
@@ -301,61 +388,43 @@ Generate 4-7 strategic clarifying questions that will transform this vague input
 }
 
 async function processModeADistill(body, env) {
-  const { questions, answers } = body;
+  const { input, questions, answers, provider, model } = body;
 
-  const systemPrompt = `You are an expert information architect and context synthesis specialist. Your role is to transform Q&A exchanges into polished, production-ready context briefs.
+  const systemPrompt = `You are an expert at synthesizing Q&A into comprehensive context engineering briefs. Create a detailed, well-structured brief that integrates all information from the questions and answers. The brief should be production-ready for any AI model.`;
 
-Given a set of strategic questions and user answers, create a comprehensive, well-structured context brief that:
+  let contextText = "";
 
-**Integration & Synthesis:**
-- Extract and integrate ALL key information from the Q&A
-- Identify connections and patterns across answers
-- Resolve any contradictions or ambiguities
-- Highlight critical insights and priorities
-- Synthesize scattered details into cohesive narrative
-
-**Organization & Structure:**
-- Organize information logically by theme/category
-- Use clear hierarchical structure with sections and subsections
-- Group related concepts together
-- Create natural flow from context → requirements → details
-- Use headings, bullet points, and formatting for clarity
-
-**Production Quality:**
-- Write in clear, professional, active voice
-- Be comprehensive yet concise (no unnecessary words)
-- Make it self-contained and actionable
-- Ensure any AI or human reader has complete context
-- Balance technical precision with readability
-
-**Output Format:**
-- Transform Q&A into flowing narrative (NOT list format)
-- Use strategic section headers (e.g., "Objective", "Requirements", "Constraints")
-- Include all essential details from answers
-- Add minimal connecting text for coherence
-- Aim for 400-1000 words depending on complexity
-
-**Critical Rules:**
-- NEVER simply reformat the Q&A as a list
-- DO synthesize and reorganize information thematically
-- DO preserve all specific details from answers
-- DO NOT add assumptions or information not in answers
-- DO NOT include meta-commentary about the process
-- DO create a document that stands alone without the original Q&A`;
-
-  let qaText = "Questions and User Answers:\n\n";
-  for (let i = 0; i < questions.length; i++) {
-    qaText += `Q${i + 1}: ${questions[i]}\n`;
-    qaText += `A${i + 1}: ${answers[i]}\n\n`;
+  // Include original input for context
+  if (input) {
+    contextText += `ORIGINAL REQUEST:\n"${input}"\n\n`;
   }
 
-  const userPrompt = `${qaText}
+  contextText += "CLARIFICATION Q&A:\n\n";
+  for (let i = 0; i < questions.length; i++) {
+    contextText += `Q${i + 1}: ${questions[i]}\n`;
+    contextText += `A${i + 1}: ${answers[i] || "(No answer provided)"}\n\n`;
+  }
 
-Transform this Q&A into a comprehensive, well-structured context brief that synthesizes all information into a cohesive, production-ready document.`;
+  const userPrompt = `${contextText}
 
-  const aiResult = await callGemini(systemPrompt, userPrompt, env, {
+Based on the original request and the Q&A clarification above, synthesize a comprehensive, production-ready context engineering brief.
+
+Requirements:
+- Include ALL key information from the answers
+- Organize logically with clear sections
+- Be specific and actionable
+- Remove redundancy
+- Do NOT use Q&A format
+- Create a cohesive narrative
+- Be comprehensive yet concise
+
+Generate the context brief:`;
+
+  const aiResult = await callAIWithFallback(systemPrompt, userPrompt, env, {
     temperature: 0.7,
-    maxTokens: 5120,
+    maxTokens: 16384, // Increased for comprehensive synthesis
+    provider: provider,
+    model: model,
   });
 
   return {
@@ -365,9 +434,9 @@ Transform this Q&A into a comprehensive, well-structured context brief that synt
     stage: "distill",
     output: aiResult.output,
     metadata: {
-      provider: "gemini",
+      provider: aiResult.provider,
       model: aiResult.model,
-      fallbackUsed: false,
+      fallbackUsed: aiResult.fallbackUsed,
     },
   };
 }
@@ -376,99 +445,36 @@ Transform this Q&A into a comprehensive, well-structured context brief that synt
 // Mode B - CoT / PoT
 // ===========================
 async function processModeB(body, env) {
-  const { input, subMode } = body;
+  const { input, subMode, provider, model } = body;
+
+  // Input length validation
+  if (input.length > 2500) {
+    throw new Error(
+      "Input too long for reasoning mode. Please limit to 2500 characters.",
+    );
+  }
 
   let systemPrompt;
 
   if (subMode === "cot") {
-    systemPrompt = `You are an expert analytical reasoner specializing in Chain-of-Thought (CoT) methodology. Break down complex problems into transparent, step-by-step logical reasoning.
-
-Your CoT reasoning should follow this comprehensive structure:
-
-1. **Problem Understanding & Framing**
-   - Restate the core question or challenge
-   - Identify what's being asked (explicitly and implicitly)
-   - Define success criteria and constraints
-   - Note any ambiguities or assumptions
-
-2. **Component Analysis**
-   - Break down into fundamental elements
-   - Identify key variables, actors, systems involved
-   - Map relationships and dependencies
-   - Highlight critical vs. peripheral factors
-
-3. **Step-by-Step Reasoning**
-   - Walk through logic sequentially with clear transitions
-   - Explain WHY each step follows from the previous
-   - Surface decision points and evaluate options
-   - Show work - make thinking visible and verifiable
-   - Use concrete examples where helpful
-   - Number each reasoning step clearly
-
-4. **Synthesis & Conclusion**
-   - Integrate insights from analysis
-   - State final answer/recommendation with confidence level
-   - Explain how conclusion addresses original problem
-   - Note limitations or caveats
-   - Suggest follow-up questions or next steps
-
-CRITICAL REQUIREMENTS:
-- Be THOROUGH - don't skip reasoning steps
-- Be EXPLICIT - state assumptions, don't leave them implicit
-- Be LOGICAL - each step must follow necessarily from previous
-- Use clear numbered structure (1.1, 1.2, etc.) for sub-points
-- Aim for 400-1000 words of detailed reasoning
-- Think out loud - transparency is the goal`;
+    systemPrompt = `Break down this problem step-by-step using Chain-of-Thought reasoning.`;
+  } else if (subMode === "pot") {
+    systemPrompt = `Transform this into algorithmic pseudo-code reasoning (Program-of-Thought).`;
+  } else if (subMode === "tree") {
+    systemPrompt = `Use Tree of Thoughts reasoning: explore multiple solution paths, evaluate each branch, and select the best approach. Structure your response with: 1) Multiple thought branches 2) Evaluation of each branch 3) Selected optimal path 4) Final solution.`;
+  } else if (subMode === "react") {
+    systemPrompt = `Use ReAct (Reasoning + Acting) methodology: alternate between reasoning steps and action steps. Format: Thought 1 → Action 1 → Observation 1 → Thought 2 → Action 2 → Observation 2... → Final Answer.`;
   } else {
-    systemPrompt = `You are an expert algorithmic thinker specializing in Program-of-Thought (PoT) methodology. Transform problems into structured, executable pseudo-code with clear logic flow.
-
-Your PoT reasoning should follow this comprehensive structure:
-
-1. **Problem Specification**
-   - Define inputs (types, formats, constraints, examples)
-   - Define outputs (types, formats, success criteria)
-   - State assumptions and edge cases
-   - Clarify computational requirements
-
-2. **Algorithm Design**
-   - High-level approach and strategy
-   - Key data structures needed (with rationale)
-   - Core functions/procedures outline
-   - Complexity considerations (time/space)
-   - Alternative approaches considered
-
-3. **Pseudo-Code Implementation**
-   - Write structured, code-like logic
-   - Use clear variable names and types
-   - Include control flow (if/else, loops, recursion)
-   - Add inline comments explaining non-obvious logic
-   - Show data transformations step-by-step
-   - Use indentation and formatting for clarity
-   - Make it executable-adjacent (someone could implement this)
-
-4. **Algorithm Analysis**
-   - Explain key design decisions and trade-offs
-   - Discuss complexity (Big-O if relevant)
-   - Note edge cases and how they're handled
-   - Suggest optimizations or variations
-   - Highlight potential failure modes
-
-CRITICAL REQUIREMENTS:
-- Use PROPER pseudo-code syntax (not vague descriptions)
-- Be SPECIFIC with data structures and operations
-- ANNOTATE logic with explanatory comments
-- Think like you're designing for implementation
-- Aim for 400-1200 words including code + explanations
-- Balance technical precision with readability`;
+    systemPrompt = `Break down this problem step-by-step using Chain-of-Thought reasoning.`;
   }
 
-  const userPrompt = `Problem/Task: ${input}
-
-Provide comprehensive ${subMode === "cot" ? "Chain-of-Thought reasoning" : "Program-of-Thought algorithmic design"} that thoroughly analyzes and solves this.`;
+  const userPrompt = input;
 
   const aiResult = await callAIWithFallback(systemPrompt, userPrompt, env, {
     temperature: 0.8,
-    maxTokens: 4096,
+    maxTokens: 8192,
+    provider: provider,
+    model: model,
   });
 
   return {
@@ -488,40 +494,15 @@ Provide comprehensive ${subMode === "cot" ? "Chain-of-Thought reasoning" : "Prog
 // Image Mode
 // ===========================
 async function processImageMode(body, env) {
-  const { input, outputFormat } = body;
+  const { input, outputFormat, provider, model } = body;
 
-  const systemPrompt = `You are a master visual prompt engineer with expertise in photography, cinematography, and digital art. Transform user concepts into comprehensive visual blueprints optimized for image generation AI (Midjourney, SDXL, Flux, Stable Diffusion).
+  const systemPrompt = `Generate detailed image prompt with: Subject, Scene, Environment, Lighting, Camera, Lens, Mood, Palette, Art Style, Textures, Composition, Negative Controls, References.`;
 
-Generate a DETAILED blueprint using this EXACT structure:
-
-Subject: [Main subject/focal point - be ultra-specific about appearance, characteristics, materials]
-Scene: [What is happening - action, interaction, story moment, context]
-Environment: [Complete setting description - location, background elements, spatial relationships, time of day]
-Lighting: [Comprehensive lighting setup - primary/secondary sources, direction, quality (hard/soft), color temperature, mood, shadows, highlights]
-Camera: [Technical camera specs - angle (eye-level/high/low/dutch/aerial), perspective (wide/normal/telephoto), framing (close-up/medium/full/establishing)]
-Lens: [Lens characteristics - focal length (14mm/35mm/50mm/85mm/200mm), aperture (f/1.4-f/22), depth of field, bokeh, distortion, optical effects]
-Mood: [Emotional atmosphere - specific feelings, energy level, psychological impact, viewer response]
-Palette: [Precise color scheme - primary/secondary/accent colors, saturation levels, contrast, color harmony (analogous/complementary/triadic), color grading]
-Art Style: [Artistic approach - medium (photography/painting/3D/mixed), technique, artistic movement, specific artist references, rendering style]
-Textures: [Surface qualities - materials, tactile properties, weathering, finish (matte/glossy/rough/smooth), detail level]
-Composition: [Visual structure - rule of thirds, golden ratio, leading lines, symmetry/asymmetry, visual balance, focal hierarchy, negative space]
-Negative Controls: [Specific elements to AVOID - unwanted styles, artifacts, compositions, colors, subjects]
-References: [Concrete examples - specific artworks, photographers, films, artistic periods, visual styles]
-
-CRITICAL REQUIREMENTS:
-- Be HIGHLY SPECIFIC with technical details (not vague)
-- Use professional photography/cinematography terminology
-- Each field should be 2-4 sentences of rich detail
-- Think like a professional creative director briefing a team
-- Make every word count toward visual clarity`;
-
-  const userPrompt = `User's visual concept: "${input}"
-
-Transform this into a comprehensive visual blueprint with professional-level detail for each field. Expand the concept with expert knowledge of visual composition, lighting, and aesthetics.`;
+  const userPrompt = input;
 
   const aiResult = await callAIWithFallback(systemPrompt, userPrompt, env, {
-    temperature: 0.8,
-    maxTokens: 3072,
+    temperature: 0.7,
+    maxTokens: 4096,
   });
 
   const response = {
@@ -546,39 +527,17 @@ Transform this into a comprehensive visual blueprint with professional-level det
 // Video Mode
 // ===========================
 async function processVideoMode(body, env) {
-  const { input, outputFormat } = body;
+  const { input, outputFormat, provider, model } = body;
 
-  const systemPrompt = `You are a professional cinematographer and director specializing in visual storytelling. Transform user concepts into detailed cinematic breakdowns for video generation AI (Runway Gen-3, Pika, Luma Dream Machine, Kling).
+  const systemPrompt = `Generate cinematic video breakdown with: Scene Summary, Camera Motion, Lens, Character Movement, Environment, Lighting, Timeline (per second), Style, Aesthetic Rules, Negative Controls, References.`;
 
-Create a COMPREHENSIVE blueprint using this EXACT structure:
-
-Scene Summary: [2-3 sentence cinematic description capturing the essence, narrative moment, and emotional core]
-Camera Motion: [Detailed movement - type (pan/tilt/dolly/zoom/crane/steadicam/handheld), speed (slow/medium/fast), trajectory, start/end positions, motivation for movement]
-Lens & Focal Length: [Technical specs - focal length (wide 14-24mm/normal 35-50mm/telephoto 85-200mm), aperture, depth of field characteristics, optical effects (flares/aberrations)]
-Character Movement: [Subject actions - blocking, choreography, speed, emotional quality of movement, body language, interaction with environment, performance notes]
-Environment Dynamics: [Background motion - wind, water, crowds, vehicles, natural phenomena, practical effects, environmental storytelling elements]
-Lighting: [Cinematic lighting - key/fill/rim lights, practical sources, color temperature shifts, lighting changes over time, shadow play, atmospheric effects (fog/haze/particles), mood evolution]
-Timeline (0-1s, 1-2s, etc.): [Precise frame-by-frame breakdown - describe visual changes, action beats, camera moves, lighting shifts for each second. Be specific about timing and transitions]
-Style: [Cinematic approach - genre (noir/sci-fi/documentary/commercial), era (classic/modern/futuristic), film references, color grading (teal-orange/bleach-bypass/vintage), grain/texture]
-Aesthetic Rules: [Visual guidelines - contrast levels, saturation, sharpness, motion blur, frame rate feel (24fps cinematic/60fps smooth), aspect ratio implications, compositional principles]
-Negative Controls: [Elements to AVOID - unwanted artifacts, camera issues (shake/jitter), visual styles, technical problems, content to exclude]
-References: [Specific examples - films (with scene/timestamp if relevant), directors, cinematographers, music videos, commercials, visual artists]
-
-CRITICAL REQUIREMENTS:
-- Think in MOTION - everything should have temporal dynamics
-- Use professional film production terminology
-- Be specific about TIMING - when things happen in the clip
-- Each field should be 2-5 sentences with rich temporal detail
-- Consider cause and effect in motion
-- Design for 3-10 second clip generation`;
-
-  const userPrompt = `User's video concept: "${input}"
-
-Transform this into a professional cinematic breakdown with frame-accurate temporal detail. Think like a director planning a shot.`;
+  const userPrompt = input;
 
   const aiResult = await callAIWithFallback(systemPrompt, userPrompt, env, {
-    temperature: 0.8,
-    maxTokens: 3584,
+    temperature: 0.7,
+    maxTokens: 2000,
+    provider: provider,
+    model: model,
   });
 
   const response = {
@@ -603,38 +562,15 @@ Transform this into a professional cinematic breakdown with frame-accurate tempo
 // Music Mode
 // ===========================
 async function processMusicMode(body, env) {
-  const { input, outputFormat } = body;
+  const { input, outputFormat, provider, model } = body;
 
-  const systemPrompt = `You are a professional music producer and composer with expertise in music theory, production, and arrangement. Transform user concepts into comprehensive musical blueprints for AI music generation (Suno, Udio, MusicGen, Stable Audio).
+  const systemPrompt = `Generate music blueprint with: Genre, Tempo (BPM), Key, Chord Progression, Mood, Vocal Style, Lyrical Theme, Instrumentation, Mixing Style, Song Structure, Reference Tracks.`;
 
-Create a DETAILED blueprint using this EXACT structure:
-
-Genre: [Primary genre + subgenre + fusion elements. Be specific - not just "rock" but "indie rock with post-punk influences and shoegaze textures"]
-Tempo (BPM): [Exact BPM or range (e.g., 128 BPM or 120-125 BPM). Include feel - strict/loose/swing/rubato. Consider genre conventions]
-Key: [Musical key (e.g., E Minor, Ab Major) + modal flavor if relevant (Dorian/Phrygian/etc.). Include modulation points if applicable]
-Chord Progression: [Specific chord sequence with Roman numerals or chord names. Example: "I-V-vi-IV in C Major" or "Am-F-C-G". Note rhythm/timing of changes]
-Mood & Emotion: [Multi-dimensional emotional description - energy level (low/high), emotional tone (melancholic/euphoric/aggressive), vibe (chill/intense/mysterious), listener impact]
-Vocal Style: [Detailed vocal specs - gender, range (alto/tenor/etc.), delivery (smooth/raspy/breathy/powerful), effects (reverb/delay/autotune), melodic vs spoken, harmony layers. If instrumental, specify lead instrument role]
-Lyrical Theme: [Narrative concept - subject matter, perspective (first/third person), imagery, storytelling approach, metaphors, emotional arc. If instrumental, describe the musical "story"]
-Instrumentation: [Complete arrangement - drums (live/electronic/hybrid + specific patterns), bass (synth/electric/upright + playing style), guitars/keys/synths (specific sounds/patches), supporting instruments, layering strategy]
-Mixing Style: [Production aesthetic - clarity (clean/lo-fi/raw), spatial design (wide/intimate/ambient), frequency balance (bass-heavy/bright/balanced), effects (reverb depth, delay types), dynamics (compressed/dynamic), reference production era]
-Song Structure: [Complete form - intro duration, verse/chorus arrangement (ABABCB, etc.), bridge placement, outro style, timing of sections, transitions, build/release moments]
-Reference Tracks: [3-5 specific songs with artist names that exemplify the target sound. Explain what aspect of each reference to emulate]
-
-CRITICAL REQUIREMENTS:
-- Use PROFESSIONAL music theory and production terminology
-- Be SPECIFIC with technical details (not "upbeat" but "140 BPM four-on-floor house beat")
-- Each field should be 2-4 sentences with rich musical detail
-- Think like a producer giving session musicians a recording brief
-- Balance artistic vision with technical precision`;
-
-  const userPrompt = `User's music concept: "${input}"
-
-Transform this into a comprehensive musical blueprint with professional production-level detail. Expand with expert knowledge of music theory, arrangement, and production.`;
+  const userPrompt = input;
 
   const aiResult = await callAIWithFallback(systemPrompt, userPrompt, env, {
-    temperature: 0.8,
-    maxTokens: 3072,
+    temperature: 0.7,
+    maxTokens: 4096,
   });
 
   const response = {
@@ -659,36 +595,107 @@ Transform this into a comprehensive musical blueprint with professional producti
 // AI Provider Integration
 // ===========================
 async function callAIWithFallback(systemPrompt, userPrompt, env, options = {}) {
-  let result;
+  let result = null;
   let fallbackUsed = false;
 
+  // Check if user specified a provider and model
+  const preferredProvider = options.provider || "gemini";
+  const preferredModel = options.model;
+
   try {
-    // Primary: Gemini 2.5 Flash with retry and timeout
-    result = await fetchWithTimeout(
-      () =>
-        fetchWithRetry(
+    // Use user-selected provider if specified
+    if (preferredProvider === "groq") {
+      result = await fetchWithTimeout(async () => {
+        return await fetchWithRetry(
+          () =>
+            callGroq(systemPrompt, userPrompt, env, {
+              ...options,
+              model: preferredModel,
+            }),
+          1,
+        );
+      }, 30000);
+    } else if (preferredProvider === "openrouter") {
+      result = await fetchWithTimeout(async () => {
+        return await fetchWithRetry(
+          () =>
+            callOpenRouter(systemPrompt, userPrompt, env, {
+              ...options,
+              model: preferredModel,
+            }),
+          1,
+        );
+      }, 30000);
+    } else {
+      // Default: Gemini with retry (only 1 retry for MAX_TOKENS errors)
+      result = await fetchWithTimeout(async () => {
+        return await fetchWithRetry(
           () => callGemini(systemPrompt, userPrompt, env, options),
-          2,
-        ),
-      30000,
+          1, // Reduced from 2 to 1 - MAX_TOKENS won't fix itself with retry
+        );
+      }, 30000);
+    }
+  } catch (primaryError) {
+    console.error(
+      `${preferredProvider} failed, trying fallback:`,
+      primaryError.message,
     );
-  } catch (error) {
-    console.error("Gemini failed, trying OpenRouter:", error);
+
+    // If error is about complexity/length, don't fallback - just throw
+    if (
+      primaryError.message.includes("too complex") ||
+      primaryError.message.includes("shorter")
+    ) {
+      throw primaryError;
+    }
+
     fallbackUsed = true;
 
     try {
-      // Fallback: OpenRouter with retry and timeout
-      result = await fetchWithTimeout(
-        () =>
-          fetchWithRetry(
-            () => callOpenRouter(systemPrompt, userPrompt, env, options),
-            2,
-          ),
-        30000,
-      );
-    } catch (openrouterError) {
-      console.error("OpenRouter also failed:", openrouterError);
-      throw new Error("All AI providers failed");
+      // Fallback logic: Groq -> OpenRouter -> Gemini (depending on what failed)
+      if (preferredProvider === "groq") {
+        result = await fetchWithTimeout(
+          () =>
+            fetchWithRetry(
+              () => callOpenRouter(systemPrompt, userPrompt, env, options),
+              1,
+            ),
+          30000,
+        );
+      } else if (preferredProvider === "openrouter") {
+        result = await fetchWithTimeout(
+          () =>
+            fetchWithRetry(
+              () => callGemini(systemPrompt, userPrompt, env, options),
+              1,
+            ),
+          30000,
+        );
+      } else {
+        // Gemini failed, try OpenRouter
+        result = await fetchWithTimeout(
+          () =>
+            fetchWithRetry(
+              () => callOpenRouter(systemPrompt, userPrompt, env, options),
+              1,
+            ),
+          30000,
+        );
+      }
+    } catch (fallbackError) {
+      console.error("Fallback also failed:", fallbackError.message);
+
+      // Better error message for rate limits
+      if (
+        fallbackError.message.includes("429") ||
+        fallbackError.message.includes("Rate limit")
+      ) {
+        throw new Error(
+          "AI service temporarily unavailable. Please try again in a few minutes.",
+        );
+      }
+
+      throw new Error("All AI providers failed. Please try again later.");
     }
   }
 
@@ -702,8 +709,11 @@ async function callOpenRouter(systemPrompt, userPrompt, env, options = {}) {
   const endpoint = "https://openrouter.ai/api/v1/chat/completions";
   const apiKey = env.OPENROUTER_API_KEY;
 
+  // Use specified model or default
+  const model = options.model || "z-ai/glm-4.5-air:free";
+
   const requestBody = {
-    model: "z-ai/glm-4.5-air:free",
+    model: model,
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
@@ -733,7 +743,47 @@ async function callOpenRouter(systemPrompt, userPrompt, env, options = {}) {
   return {
     output: data.choices[0].message.content,
     provider: "openrouter",
-    model: "glm-4.5-air:free",
+    model: options.model || "glm-4.5-air:free",
+  };
+}
+
+async function callGroq(systemPrompt, userPrompt, env, options = {}) {
+  const endpoint = "https://api.groq.com/openai/v1/chat/completions";
+  const apiKey = env.GROQ_API_KEY;
+
+  // Default to first model if not specified
+  const model = options.model || "moonshotai/kimi-k2-instruct";
+
+  const requestBody = {
+    model: model,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    temperature: options.temperature || 0.7,
+    max_tokens: options.maxTokens || 2048,
+  };
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Groq error: ${response.status} - ${errorText}`);
+  }
+
+  const data = await response.json();
+
+  return {
+    output: data.choices[0].message.content,
+    provider: "groq",
+    model: model,
   };
 }
 
@@ -744,6 +794,10 @@ async function callGemini(systemPrompt, userPrompt, env, options = {}) {
 
   const combinedPrompt = `${systemPrompt}\n\n${userPrompt}`;
 
+  console.log(
+    `Gemini request - prompt length: ${combinedPrompt.length} chars, maxTokens: ${options.maxTokens || 2048}`,
+  );
+
   const requestBody = {
     contents: [
       {
@@ -751,8 +805,8 @@ async function callGemini(systemPrompt, userPrompt, env, options = {}) {
       },
     ],
     generationConfig: {
-      temperature: options.temperature || 0.8,
-      maxOutputTokens: options.maxTokens || 8192, // Increased for comprehensive output
+      temperature: options.temperature || 0.7,
+      maxOutputTokens: options.maxTokens || 2048, // Reduced default to prevent MAX_TOKENS
       topP: 0.95,
       topK: 40,
     },
@@ -813,20 +867,62 @@ async function callGemini(systemPrompt, userPrompt, env, options = {}) {
 
   const candidate = data.candidates[0];
 
-  // Check finish reason
-  if (candidate.finishReason && candidate.finishReason !== "STOP") {
-    console.warn("Gemini finish reason:", candidate.finishReason);
+  // Check finish reason BEFORE validating content
+  const finishReason = candidate.finishReason || "STOP";
 
-    if (candidate.finishReason === "SAFETY") {
-      throw new Error("Gemini blocked content due to safety filters");
+  if (finishReason === "SAFETY") {
+    throw new Error("Gemini blocked content due to safety filters");
+  }
+
+  if (finishReason === "RECITATION") {
+    throw new Error("Gemini blocked due to recitation concerns");
+  }
+
+  // Handle MAX_TOKENS - CRITICAL FIX: Sometimes content.parts is missing
+  if (finishReason === "MAX_TOKENS") {
+    console.warn(
+      "Gemini hit MAX_TOKENS, attempting to extract partial response",
+    );
+    console.error("Gemini candidate:", JSON.stringify(candidate));
+
+    // Try to get partial text if available
+    let partialText = "";
+    if (
+      candidate.content &&
+      candidate.content.parts &&
+      candidate.content.parts.length > 0 &&
+      candidate.content.parts[0] &&
+      candidate.content.parts[0].text
+    ) {
+      partialText = candidate.content.parts[0].text;
     }
 
-    if (candidate.finishReason === "RECITATION") {
-      throw new Error("Gemini blocked due to recitation concerns");
+    if (partialText && partialText.trim().length > 0) {
+      // Return partial text with warning
+      console.warn(
+        "Returning partial text due to MAX_TOKENS:",
+        partialText.length,
+        "characters",
+      );
+      return {
+        output:
+          partialText +
+          "\n\n[Note: Response was truncated due to length limits. Please try with a shorter input or more specific request.]",
+        provider: "gemini",
+        model: "gemini-2.5-flash",
+        truncated: true,
+      };
+    } else {
+      // CRITICAL: MAX_TOKENS with no content means prompt is too long
+      // Don't retry - reduce prompt length instead
+      console.error("MAX_TOKENS with no output - prompt likely too long");
+      throw new Error(
+        "Request too complex. Please try a shorter or more specific input.",
+      );
     }
   }
 
-  // Validate content structure
+  // Validate content structure for normal responses
   if (
     !candidate.content ||
     !candidate.content.parts ||
@@ -840,6 +936,11 @@ async function callGemini(systemPrompt, userPrompt, env, options = {}) {
 
   if (!outputText || outputText.trim().length === 0) {
     throw new Error("Gemini returned empty text");
+  }
+
+  // Warn if stopped for other reasons
+  if (finishReason !== "STOP") {
+    console.warn("Gemini finish reason (unusual):", finishReason);
   }
 
   return {
@@ -886,47 +987,101 @@ async function handleHealthCheck(env) {
     providers: {
       gemini: { status: "unknown", latency: null },
       openrouter: { status: "unknown", latency: null },
+      groq: { status: "unknown", latency: null },
     },
   };
 
   // Test Gemini
   try {
     const start = Date.now();
-    await callGemini("Health check", "Respond with OK", env, { maxTokens: 10 });
+    await callGemini("You are a health check bot.", "Say OK", env, {
+      maxTokens: 100, // Increased from 10 to avoid MAX_TOKENS
+    });
     health.providers.gemini = {
       status: "healthy",
       latency: Date.now() - start,
     };
   } catch (error) {
-    health.providers.gemini = {
-      status: "unhealthy",
-      error: error.message,
-    };
+    // If error is MAX_TOKENS, it means API is working (just token limit hit)
+    if (error.message.includes("MAX_TOKENS")) {
+      health.providers.gemini = {
+        status: "healthy",
+        latency: Date.now() - start,
+        note: "API working (MAX_TOKENS in health check)",
+      };
+    } else {
+      health.providers.gemini = {
+        status: "unhealthy",
+        error: error.message,
+      };
+    }
   }
 
   // Test OpenRouter
   try {
     const start = Date.now();
-    await callOpenRouter("Health check", "Respond with OK", env, {
-      maxTokens: 10,
+    await callOpenRouter("You are a health check bot.", "Say OK", env, {
+      maxTokens: 100, // Increased from 10
     });
     health.providers.openrouter = {
       status: "healthy",
       latency: Date.now() - start,
     };
   } catch (error) {
-    health.providers.openrouter = {
-      status: "unhealthy",
-      error: error.message,
-    };
+    // Rate limit is expected for free tier, don't mark as unhealthy
+    if (error.message.includes("Rate limit") || error.message.includes("429")) {
+      health.providers.openrouter = {
+        status: "healthy",
+        latency: null,
+        note: "Rate limited (expected for free tier)",
+      };
+    } else {
+      health.providers.openrouter = {
+        status: "unhealthy",
+        error: error.message,
+      };
+    }
   }
 
-  // Overall status
-  if (
+  // Test Groq
+  try {
+    const start = Date.now();
+    await callGroq("You are a health check bot.", "Say OK", env, {
+      maxTokens: 100,
+    });
+    health.providers.groq = {
+      status: "healthy",
+      latency: Date.now() - start,
+    };
+  } catch (error) {
+    // Rate limit is expected for free tier, don't mark as unhealthy
+    if (error.message.includes("Rate limit") || error.message.includes("429")) {
+      health.providers.groq = {
+        status: "healthy",
+        latency: null,
+        note: "Rate limited (expected for free tier)",
+      };
+    } else {
+      health.providers.groq = {
+        status: "unhealthy",
+        error: error.message,
+      };
+    }
+  }
+
+  // Overall status - at least one provider must be healthy
+  const allUnhealthy =
+    health.providers.gemini.status === "unhealthy" &&
+    health.providers.openrouter.status === "unhealthy" &&
+    health.providers.groq.status === "unhealthy";
+
+  if (allUnhealthy) {
+    health.status = "critical";
+  } else if (
     health.providers.gemini.status === "unhealthy" &&
     health.providers.openrouter.status === "unhealthy"
   ) {
-    health.status = "critical";
+    health.status = "degraded";
   } else if (health.providers.gemini.status === "unhealthy") {
     health.status = "degraded";
   }

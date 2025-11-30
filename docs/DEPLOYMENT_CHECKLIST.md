@@ -1,6 +1,6 @@
 # ✅ DEPLOYMENT CHECKLIST
 
-**CONTEXTOR v1.2.0 - Pre-Deploy & Post-Deploy Verification**
+**CONTEXTOR v1.3.1 - Pre-Deploy & Post-Deploy Verification**
 
 Complete checklist untuk memastikan deployment sukses dan semua fitur berfungsi.
 
@@ -12,24 +12,22 @@ Complete checklist untuk memastikan deployment sukses dan semua fitur berfungsi.
 - [ ] Review `worker/index.js` changes
 - [ ] Review `public/app.js` changes
 - [ ] Review `public/index.html` version update
-- [ ] Check `package.json` version: 1.2.0
+- [ ] Check `package.json` version: 1.3.1
 - [ ] No syntax errors (run linter if available)
 
 ### 2. Documentation Review
-- [ ] `CHANGELOG.md` updated with v1.2.0
-- [ ] `ERROR_GUIDE.md` complete (790 lines)
-- [ ] `FEATURES.md` complete (1089 lines)
-- [ ] `V1.2.0_RELEASE_NOTES.md` created (396 lines)
-- [ ] `IMPLEMENTATION_SUMMARY.md` created (567 lines)
-- [ ] `QUICK_ERROR_REFERENCE.md` created (316 lines)
-- [ ] `RINGKASAN_UPDATE_v1.2.0.md` created (467 lines)
-- [ ] `docs/guides/stability_guide.md` created (717 lines)
-- [ ] `docs/guides/feature_recommendations.md` created (930 lines)
-- [ ] `docs/05-worker_logic.md` updated
+- [ ] `CHANGELOG.md` updated with v1.3.1
+- [ ] `ERROR_GUIDE.md` complete
+- [ ] `FEATURES.md` updated
+- [ ] `QUICK_REFERENCE_v1.3.1.md` exists
+- [ ] `docs/MODE_A_B_GUIDE.md` updated with v1.3.1 fixes
+- [ ] `docs/guides/stability_guide.md` exists
+- [ ] `docs/guides/feature_recommendations.md` exists
 
 ### 3. Environment Variables
-- [ ] `OPENROUTER_API_KEY` set in Cloudflare Dashboard
-- [ ] `GEMINI_API_KEY` set in Cloudflare Dashboard
+- [ ] `GEMINI_API_KEY` set in Cloudflare Dashboard (REQUIRED)
+- [ ] `GROQ_API_KEY` set in Cloudflare Dashboard (OPTIONAL)
+- [ ] `OPENROUTER_API_KEY` set in Cloudflare Dashboard (OPTIONAL)
 - [ ] `.dev.vars` file configured (for local testing)
 
 ### 4. Local Testing (Optional but Recommended)
@@ -113,16 +111,17 @@ curl https://YOUR-WORKER-URL.workers.dev/api/health
 ```json
 {
   "status": "healthy",
-  "timestamp": "2025-11-29T...",
+  "timestamp": "2025-11-30T...",
   "providers": {
     "gemini": { "status": "healthy", "latency": 1234 },
+    "groq": { "status": "healthy", "latency": 567 },
     "openrouter": { "status": "healthy", "latency": 2345 }
   }
 }
 ```
 
 - [ ] Health endpoint accessible
-- [ ] Both providers showing "healthy"
+- [ ] All 3 providers showing "healthy" (if API keys configured)
 - [ ] Latency values reasonable (<5000ms)
 
 ### 2. Frontend Loading
@@ -131,7 +130,8 @@ Visit your Pages URL: `https://YOUR-PROJECT.pages.dev`
 - [ ] Page loads without errors
 - [ ] UI looks correct (no missing styles)
 - [ ] All modes visible (Text, Image, Video, Music)
-- [ ] Settings modal shows version 1.2.0
+- [ ] Provider selection dropdown visible (Gemini, Groq, OpenRouter)
+- [ ] Model selection dropdown works per provider
 - [ ] Browser console shows no errors
 
 ### 3. Text Generation Test
@@ -183,26 +183,42 @@ Visit your Pages URL: `https://YOUR-PROJECT.pages.dev`
 - [ ] Blueprint output generated
 - [ ] JSON toggle works
 
-### 7. Mode A Test (Clarify → Distill)
-- Mode: Text → Mode A
-- Input: "Build a mobile app"
-- [ ] Questions generated (4-7 questions)
-- [ ] Questions form appears
-- [ ] Fill answers and submit
-- [ ] Distilled context appears
+### 7. Mode A Test (Clarify → Distill) - ENHANCED in v1.3.1
+- Mode: Text → Clarify & Distill
+- Input: "Build a YouTube video research tool"
+- [ ] 10-15 comprehensive questions generated (not 3-5!)
+- [ ] Enhanced prompt appears IN input box with "ORIGINAL REQUEST" section
+- [ ] "Answer:" fields visible for each question
+- [ ] Fill at least 5 answers next to "Answer:" fields
+- [ ] Click "💫 Distill Context" button
+- [ ] Distilled context appears (comprehensive brief)
+- [ ] NO "Input is required" error occurs
 
-### 8. Mode B Test (CoT/PoT)
-**CoT:**
-- Mode: Text → Mode B → CoT
+### 8. Reasoning Techniques Test (Text Mode)
+**CoT (Chain-of-Thought):**
+- Mode: Text → CoT
 - Input: "How to optimize database queries"
 - [ ] Chain-of-Thought reasoning appears
-- [ ] Comprehensive analysis (400+ words)
+- [ ] Step-by-step analysis present
 
-**PoT:**
-- Mode: Text → Mode B → PoT
+**PoT (Program-of-Thought):**
+- Mode: Text → PoT
 - Input: "Sort algorithm comparison"
 - [ ] Program-of-Thought output appears
 - [ ] Algorithmic breakdown present
+
+**Tree of Thoughts (NEW in v1.3.0):**
+- Mode: Text → Tree of Thoughts
+- Input: "Best architecture for scalable API"
+- [ ] Multiple solution branches generated
+- [ ] Branch evaluation present
+- [ ] Optimal path selected
+
+**ReAct (NEW in v1.3.0):**
+- Mode: Text → ReAct
+- Input: "Debug performance bottleneck"
+- [ ] Thought → Action → Observation cycle present
+- [ ] Final answer provided
 
 ### 9. Browser Compatibility
 Test in multiple browsers:
@@ -259,6 +275,7 @@ curl https://YOUR-WORKER-URL.workers.dev/api/health
 ```bash
 # Re-add API keys
 npx wrangler secret put GEMINI_API_KEY
+npx wrangler secret put GROQ_API_KEY
 npx wrangler secret put OPENROUTER_API_KEY
 ```
 
@@ -290,7 +307,9 @@ Deployment is successful if:
 
 ✅ **Functionality (100%)**
 - All 4 modes work (Text, Image, Video, Music)
-- Mode A & Mode B work
+- Mode A (Clarify & Distill) works with 10-15 questions
+- All reasoning techniques work (CoT, PoT, Tree, ReAct)
+- Multi-provider support works (Gemini, Groq, OpenRouter)
 - Copy to clipboard works
 - Export works (text/JSON)
 
@@ -364,12 +383,12 @@ npx wrangler rollback [DEPLOYMENT_ID]
 ## 📚 REFERENCE DOCUMENTS
 
 **For Users:**
-- `QUICK_ERROR_REFERENCE.md` - Troubleshooting
-- `V1.2.0_RELEASE_NOTES.md` - What's new
-- `RINGKASAN_UPDATE_v1.2.0.md` - Summary (Indonesian)
+- `ERROR_GUIDE.md` - Troubleshooting
+- `QUICK_REFERENCE_v1.3.1.md` - Quick reference
+- `CHANGELOG.md` - What's new in v1.3.1
 
 **For Developers:**
-- `IMPLEMENTATION_SUMMARY.md` - Technical details
+- `docs/MODE_A_B_GUIDE.md` - Mode A/B details
 - `docs/guides/stability_guide.md` - Architecture
 - `docs/guides/feature_recommendations.md` - Future features
 
@@ -403,7 +422,7 @@ Before marking deployment complete:
 
 ---
 
-**Version:** 1.2.0  
-**Last Updated:** 29 November 2025
+**Version:** 1.3.1  
+**Last Updated:** 30 November 2025
 
 🚀 **Ready for Production Deployment!**

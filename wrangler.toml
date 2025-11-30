@@ -16,6 +16,7 @@ workers_dev = true
 # Required secrets:
 # - OPENROUTER_API_KEY
 # - GEMINI_API_KEY
+# - GROQ_API_KEY
 
 # [vars]
 # Add non-secret environment variables here if needed
