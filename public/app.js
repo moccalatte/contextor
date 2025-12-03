@@ -681,12 +681,33 @@ function displayOutput(data) {
 
   // Display metadata
   if (data.metadata) {
-    const metadataText =
-      `Provider: ${data.metadata.provider} | ` +
-      `Model: ${data.metadata.model} | ` +
-      `Time: ${data.metadata.processingTime}ms` +
-      (data.metadata.fallbackUsed ? " | Fallback used" : "");
-    elements.outputMetadata.textContent = metadataText;
+    const metaParts = [];
+
+    if (data.metadata.provider) {
+      metaParts.push(`Provider: ${data.metadata.provider}`);
+    }
+
+    if (data.metadata.model) {
+      metaParts.push(`Model: ${data.metadata.model}`);
+    }
+
+    if (data.metadata.maxTokens) {
+      metaParts.push(`Max tokens: ${data.metadata.maxTokens}`);
+    }
+
+    if (typeof data.metadata.processingTime === "number") {
+      metaParts.push(`Time: ${data.metadata.processingTime}ms`);
+    }
+
+    if (data.metadata.fallbackUsed) {
+      metaParts.push("Fallback used");
+    }
+
+    if (data.metadata.truncated) {
+      metaParts.push("Truncated at provider limit");
+    }
+
+    elements.outputMetadata.textContent = metaParts.join(" | ");
   }
 
   // Reset format to text

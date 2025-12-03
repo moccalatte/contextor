@@ -27,6 +27,26 @@ export default {
 };
 
 // ===========================
+// Token Budgets
+// ===========================
+const PROVIDER_TOKEN_CAPS = {
+  gemini: 65000, // advertised max output tokens
+  groq: 8000,
+  openrouter: 4000,
+};
+
+function resolveMaxTokens(provider, requestedTokens) {
+  const cap = PROVIDER_TOKEN_CAPS[provider];
+  if (requestedTokens && cap) {
+    return Math.min(requestedTokens, cap);
+  }
+  if (!requestedTokens && cap) {
+    return cap;
+  }
+  return requestedTokens || 2048;
+}
+
+// ===========================
 // Main Generate Handler
 // ===========================
 async function handleGenerate(request, env) {
@@ -244,7 +264,7 @@ async function processTextMode(body, env) {
 
   const aiResult = await callAIWithFallback(systemPrompt, userPrompt, env, {
     temperature: 0.7,
-    maxTokens: 2048,
+    maxTokens: 12000, // allow longer briefs; clamped per provider
     provider: provider,
     model: model,
   });
@@ -257,6 +277,8 @@ async function processTextMode(body, env) {
       provider: aiResult.provider,
       model: aiResult.model,
       fallbackUsed: aiResult.fallbackUsed,
+      maxTokens: aiResult.maxTokens || null,
+      truncated: !!aiResult.truncated,
     },
   };
 }
@@ -329,7 +351,7 @@ Output ONLY the numbered questions, nothing else. Format:
   try {
     aiResult = await callAIWithFallback(systemPrompt, userPrompt, env, {
       temperature: 0.8,
-      maxTokens: 2500, // Increased for more questions
+      maxTokens: 6000, // Larger budget to prevent truncated questions
       provider: provider,
       model: model,
     });
@@ -383,6 +405,8 @@ Output ONLY the numbered questions, nothing else. Format:
       provider: aiResult.provider,
       model: aiResult.model,
       fallbackUsed: aiResult.fallbackUsed,
+      maxTokens: aiResult.maxTokens || null,
+      truncated: !!aiResult.truncated,
     },
   };
 }
@@ -422,7 +446,7 @@ Generate the context brief:`;
 
   const aiResult = await callAIWithFallback(systemPrompt, userPrompt, env, {
     temperature: 0.7,
-    maxTokens: 16384, // Increased for comprehensive synthesis
+    maxTokens: 32000, // Large budget for full synthesis, clamped by provider
     provider: provider,
     model: model,
   });
@@ -437,6 +461,8 @@ Generate the context brief:`;
       provider: aiResult.provider,
       model: aiResult.model,
       fallbackUsed: aiResult.fallbackUsed,
+      maxTokens: aiResult.maxTokens || null,
+      truncated: !!aiResult.truncated,
     },
   };
 }
@@ -472,7 +498,7 @@ async function processModeB(body, env) {
 
   const aiResult = await callAIWithFallback(systemPrompt, userPrompt, env, {
     temperature: 0.8,
-    maxTokens: 8192,
+    maxTokens: 12000,
     provider: provider,
     model: model,
   });
@@ -486,6 +512,8 @@ async function processModeB(body, env) {
       provider: aiResult.provider,
       model: aiResult.model,
       fallbackUsed: aiResult.fallbackUsed,
+      maxTokens: aiResult.maxTokens || null,
+      truncated: !!aiResult.truncated,
     },
   };
 }
@@ -502,7 +530,7 @@ async function processImageMode(body, env) {
 
   const aiResult = await callAIWithFallback(systemPrompt, userPrompt, env, {
     temperature: 0.7,
-    maxTokens: 4096,
+    maxTokens: 8000,
   });
 
   const response = {
@@ -513,6 +541,8 @@ async function processImageMode(body, env) {
       provider: aiResult.provider,
       model: aiResult.model,
       fallbackUsed: aiResult.fallbackUsed,
+      maxTokens: aiResult.maxTokens || null,
+      truncated: !!aiResult.truncated,
     },
   };
 
@@ -535,7 +565,7 @@ async function processVideoMode(body, env) {
 
   const aiResult = await callAIWithFallback(systemPrompt, userPrompt, env, {
     temperature: 0.7,
-    maxTokens: 2000,
+    maxTokens: 8000,
     provider: provider,
     model: model,
   });
@@ -548,6 +578,8 @@ async function processVideoMode(body, env) {
       provider: aiResult.provider,
       model: aiResult.model,
       fallbackUsed: aiResult.fallbackUsed,
+      maxTokens: aiResult.maxTokens || null,
+      truncated: !!aiResult.truncated,
     },
   };
 
@@ -570,7 +602,7 @@ async function processMusicMode(body, env) {
 
   const aiResult = await callAIWithFallback(systemPrompt, userPrompt, env, {
     temperature: 0.7,
-    maxTokens: 4096,
+    maxTokens: 8000,
   });
 
   const response = {
@@ -581,6 +613,8 @@ async function processMusicMode(body, env) {
       provider: aiResult.provider,
       model: aiResult.model,
       fallbackUsed: aiResult.fallbackUsed,
+      maxTokens: aiResult.maxTokens || null,
+      truncated: !!aiResult.truncated,
     },
   };
 
@@ -614,7 +648,7 @@ async function callAIWithFallback(systemPrompt, userPrompt, env, options = {}) {
             }),
           1,
         );
-      }, 30000);
+      }, 45000);
     } else if (preferredProvider === "openrouter") {
       result = await fetchWithTimeout(async () => {
         return await fetchWithRetry(
@@ -625,7 +659,7 @@ async function callAIWithFallback(systemPrompt, userPrompt, env, options = {}) {
             }),
           1,
         );
-      }, 30000);
+      }, 45000);
     } else {
       // Default: Gemini with retry (only 1 retry for MAX_TOKENS errors)
       result = await fetchWithTimeout(async () => {
@@ -633,7 +667,7 @@ async function callAIWithFallback(systemPrompt, userPrompt, env, options = {}) {
           () => callGemini(systemPrompt, userPrompt, env, options),
           1, // Reduced from 2 to 1 - MAX_TOKENS won't fix itself with retry
         );
-      }, 30000);
+      }, 45000);
     }
   } catch (primaryError) {
     console.error(
@@ -660,7 +694,7 @@ async function callAIWithFallback(systemPrompt, userPrompt, env, options = {}) {
               () => callOpenRouter(systemPrompt, userPrompt, env, options),
               1,
             ),
-          30000,
+          45000,
         );
       } else if (preferredProvider === "openrouter") {
         result = await fetchWithTimeout(
@@ -669,7 +703,7 @@ async function callAIWithFallback(systemPrompt, userPrompt, env, options = {}) {
               () => callGemini(systemPrompt, userPrompt, env, options),
               1,
             ),
-          30000,
+          45000,
         );
       } else {
         // Gemini failed, try OpenRouter
@@ -679,7 +713,7 @@ async function callAIWithFallback(systemPrompt, userPrompt, env, options = {}) {
               () => callOpenRouter(systemPrompt, userPrompt, env, options),
               1,
             ),
-          30000,
+          45000,
         );
       }
     } catch (fallbackError) {
@@ -711,6 +745,7 @@ async function callOpenRouter(systemPrompt, userPrompt, env, options = {}) {
 
   // Use specified model or default
   const model = options.model || "z-ai/glm-4.5-air:free";
+  const maxTokens = resolveMaxTokens("openrouter", options.maxTokens);
 
   const requestBody = {
     model: model,
@@ -719,7 +754,7 @@ async function callOpenRouter(systemPrompt, userPrompt, env, options = {}) {
       { role: "user", content: userPrompt },
     ],
     temperature: options.temperature || 0.7,
-    max_tokens: options.maxTokens || 2048,
+    max_tokens: maxTokens,
   };
 
   const response = await fetch(endpoint, {
@@ -740,10 +775,25 @@ async function callOpenRouter(systemPrompt, userPrompt, env, options = {}) {
 
   const data = await response.json();
 
+  const choice = data.choices?.[0];
+  const finishReason = choice?.finish_reason || choice?.finishReason || "stop";
+  const outputText = choice?.message?.content;
+
+  if (!outputText) {
+    throw new Error("OpenRouter returned empty response");
+  }
+
+  const truncated = (finishReason || "").toLowerCase() === "length";
+  const output = truncated
+    ? `${outputText}\n\n[Note: Response reached OpenRouter token limit. Switch to Gemini for longer output.]`
+    : outputText;
+
   return {
-    output: data.choices[0].message.content,
+    output,
     provider: "openrouter",
     model: options.model || "glm-4.5-air:free",
+    maxTokens,
+    truncated,
   };
 }
 
@@ -753,6 +803,7 @@ async function callGroq(systemPrompt, userPrompt, env, options = {}) {
 
   // Default to first model if not specified
   const model = options.model || "moonshotai/kimi-k2-instruct";
+  const maxTokens = resolveMaxTokens("groq", options.maxTokens);
 
   const requestBody = {
     model: model,
@@ -761,7 +812,7 @@ async function callGroq(systemPrompt, userPrompt, env, options = {}) {
       { role: "user", content: userPrompt },
     ],
     temperature: options.temperature || 0.7,
-    max_tokens: options.maxTokens || 2048,
+    max_tokens: maxTokens,
   };
 
   const response = await fetch(endpoint, {
@@ -780,10 +831,25 @@ async function callGroq(systemPrompt, userPrompt, env, options = {}) {
 
   const data = await response.json();
 
+  const choice = data.choices?.[0];
+  const finishReason = choice?.finish_reason || choice?.finishReason || "stop";
+  const outputText = choice?.message?.content;
+
+  if (!outputText) {
+    throw new Error("Groq returned empty response");
+  }
+
+  const truncated = (finishReason || "").toLowerCase() === "length";
+  const output = truncated
+    ? `${outputText}\n\n[Note: Response reached Groq token limit. Switch to Gemini for longer output.]`
+    : outputText;
+
   return {
-    output: data.choices[0].message.content,
+    output,
     provider: "groq",
     model: model,
+    maxTokens,
+    truncated,
   };
 }
 
@@ -793,9 +859,10 @@ async function callGemini(systemPrompt, userPrompt, env, options = {}) {
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
   const combinedPrompt = `${systemPrompt}\n\n${userPrompt}`;
+  const maxOutputTokens = resolveMaxTokens("gemini", options.maxTokens);
 
   console.log(
-    `Gemini request - prompt length: ${combinedPrompt.length} chars, maxTokens: ${options.maxTokens || 2048}`,
+    `Gemini request - prompt length: ${combinedPrompt.length} chars, maxTokens: ${maxOutputTokens}`,
   );
 
   const requestBody = {
@@ -806,7 +873,7 @@ async function callGemini(systemPrompt, userPrompt, env, options = {}) {
     ],
     generationConfig: {
       temperature: options.temperature || 0.7,
-      maxOutputTokens: options.maxTokens || 2048, // Reduced default to prevent MAX_TOKENS
+      maxOutputTokens: maxOutputTokens,
       topP: 0.95,
       topK: 40,
     },
@@ -911,6 +978,7 @@ async function callGemini(systemPrompt, userPrompt, env, options = {}) {
         provider: "gemini",
         model: "gemini-2.5-flash",
         truncated: true,
+        maxTokens: maxOutputTokens,
       };
     } else {
       // CRITICAL: MAX_TOKENS with no content means prompt is too long
@@ -947,6 +1015,8 @@ async function callGemini(systemPrompt, userPrompt, env, options = {}) {
     output: outputText,
     provider: "gemini",
     model: "gemini-2.5-flash",
+    maxTokens: maxOutputTokens,
+    truncated: false,
   };
 }
 
@@ -969,7 +1039,7 @@ async function fetchWithRetry(fn, maxRetries = 2) {
   }
 }
 
-async function fetchWithTimeout(fn, timeoutMs = 30000) {
+async function fetchWithTimeout(fn, timeoutMs = 45000) {
   const timeoutPromise = new Promise((_, reject) => {
     setTimeout(() => reject(new Error("Request timeout")), timeoutMs);
   });
